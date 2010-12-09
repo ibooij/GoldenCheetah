@@ -17,6 +17,7 @@
  */
 
 #include "RideFile.h"
+#include "RideFileCommand.h"
 #include <QtGlobal>
 #include <QDebug>
 #include <QFile>
