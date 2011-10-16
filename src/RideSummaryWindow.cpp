@@ -35,8 +35,16 @@ RideSummaryWindow::RideSummaryWindow(MainWindow *mainWindow) :
     QWidget(mainWindow), mainWindow(mainWindow)
 {
     QVBoxLayout *vlayout = new QVBoxLayout;
-    rideSummary = new QTextEdit(this);
-    rideSummary->setReadOnly(true);
+    rideSummary = new QWebView(this);
+    rideSummary->setContentsMargins(0,0,0,0);
+    rideSummary->page()->view()->setContentsMargins(0,0,0,0);
+    rideSummary->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    rideSummary->setAcceptDrops(false);
+
+    QFont defaultFont; // mainwindow sets up the defaults.. we need to apply
+    rideSummary->settings()->setFontSize(QWebSettings::DefaultFontSize, defaultFont.pointSize()+1);
+    rideSummary->settings()->setFontFamily(QWebSettings::StandardFont, defaultFont.family());
+
     vlayout->addWidget(rideSummary);
 
     connect(mainWindow, SIGNAL(rideSelected()), this, SLOT(refresh()));
@@ -51,17 +59,16 @@ RideSummaryWindow::refresh()
     // XXX: activeTab is never equaly to RideSummaryWindow right now because
     // it's wrapped in the summarySplitter in MainWindow.
     if (!mainWindow->rideItem()) {
-	rideSummary->clear();
+	    rideSummary->page()->mainFrame()->setHtml("");
         return;
     }
-    rideSummary->setHtml(htmlSummary());
-    rideSummary->setAlignment(Qt::AlignCenter);
+    rideSummary->page()->mainFrame()->setHtml(htmlSummary());
 }
 
 QString
 RideSummaryWindow::htmlSummary() const
 {
-    QString summary;
+    QString summary("");
 
     RideItem *rideItem = mainWindow->rideItem();
     RideFile *ride = rideItem->ride();
@@ -90,7 +97,7 @@ RideSummaryWindow::htmlSummary() const
     bool metricUnits = (unit.toString() == "Metric");
 
     const int columns = 3;
-    const char *columnNames[] = { "Totals", "Averages", "Metrics*" };
+    QString columnNames[] = { tr("Totals"), tr("Averages"), tr("Metrics*") };
     const char *totalColumn[] = {
         "workout_time",
         "time_riding",
@@ -108,7 +115,25 @@ RideSummaryWindow::htmlSummary() const
         NULL
     };
 
-    const char *metricColumn[] = {
+    QString s;
+
+    if (settings->contains(GC_SETTINGS_SUMMARY_METRICS))
+        s = settings->value(GC_SETTINGS_SUMMARY_METRICS).toString();
+    else
+        s = GC_SETTINGS_SUMMARY_METRICS_DEFAULT;
+    QStringList metricColumnList = s.split(",");
+
+    char **metricColumnTmp;
+    // Copy QStringList to char **
+    metricColumnTmp = new char*[metricColumnList.size() + 1];
+    for (int i = 0; i < metricColumnList.size(); i++) {
+        metricColumnTmp[i] = new char[strlen(metricColumnList.at(i).toStdString().c_str())+1];
+        memcpy(metricColumnTmp[i], metricColumnList.at(i).toStdString().c_str(), strlen(metricColumnList.at(i).toStdString().c_str())+1);
+    }
+    metricColumnTmp[metricColumnList.size()] = NULL;
+    char const **metricColumn = (const char**)metricColumnTmp;
+
+    /*const char *metricColumn[] = {
         "skiba_xpower",
         "skiba_relative_intensity",
         "skiba_bike_score",
@@ -117,12 +142,12 @@ RideSummaryWindow::htmlSummary() const
         "trimp_points",
         "aerobic_decoupling",
         NULL
-    };
+    };*/
 
     summary += "<table border=0 cellspacing=10><tr>";
     for (int i = 0; i < columns; ++i) {
-        summary += "<td align=\"center\" width=\"%1%\"><table>"
-            "<tr><td align=\"center\" colspan=2><h2>%2</h2></td></tr>";
+        summary += "<td align=\"center\" valign=\"top\" width=\"%1%\"><table>"
+            "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
         summary = summary.arg(90 / columns);
         summary = summary.arg(columnNames[i]);
         const char **metricsList;
@@ -135,25 +160,29 @@ RideSummaryWindow::htmlSummary() const
         for (int j = 0;; ++j) {
             const char *symbol = metricsList[j];
             if (!symbol) break;
+
             RideMetricPtr m = rideItem->metrics.value(symbol);
-            QString name = m->name().replace(QRegExp(tr("^Average ")), "");
-            if (m->units(metricUnits) == "seconds") {
-                QString s("<tr><td>%1:</td><td "
-                          "align=\"right\">%2</td></tr>");
-                s = s.arg(name);
-                s = s.arg(time_to_string(m->value(metricUnits)));
-                summary += s;
-            }
-            else {
-                QString s = "<tr><td>" + name;
-                if (m->units(metricUnits) != "")
-                    s += " (" + m->units(metricUnits) + ")";
-                s += ":</td><td align=\"right\">%1</td></tr>";
-                if (m->precision() == 0)
-                    s = s.arg((unsigned) round(m->value(metricUnits)));
-                else
-                    s = s.arg(m->value(metricUnits), 0, 'f', m->precision());
-                summary += s;
+
+            if (m) { // only if the metric still exists (ride metric forwards compatibility)
+                QString name = m->name().replace(QRegExp(tr("^Average ")), "");
+                if (m->units(metricUnits) == "seconds" || m->units(metricUnits) == tr("seconds")) {
+                    QString s("<tr><td>%1:</td><td "
+                            "align=\"right\">%2</td></tr>");
+                    s = s.arg(name);
+                    s = s.arg(time_to_string(m->value(metricUnits)));
+                    summary += s;
+
+                } else {
+                    QString s = "<tr><td>" + name;
+                    if (m->units(metricUnits) != "")
+                        s += " (" + m->units(metricUnits) + ")";
+                    s += ":</td><td align=\"right\">%1</td></tr>";
+                    if (m->precision() == 0)
+                        s = s.arg((unsigned) round(m->value(metricUnits)));
+                    else
+                        s = s.arg(m->value(metricUnits), 0, 'f', m->precision());
+                    summary += s;
+                }
             }
         }
         summary += "</table></td>";
@@ -212,7 +241,7 @@ RideSummaryWindow::htmlSummary() const
                     RideMetricPtr m = metrics.value(symbol);
                     if (!m) continue;
                     summary += "<td align=\"center\" valign=\"bottom\">" + m->name();
-                    if (m->units(metricUnits) == "seconds")
+                    if (m->units(metricUnits) == "seconds" || m->units(metricUnits) == tr("seconds"))
                         ; // don't do anything
                     else if (m->units(metricUnits).size() > 0)
                         summary += " (" + m->units(metricUnits) + ")";
@@ -234,7 +263,7 @@ RideSummaryWindow::htmlSummary() const
                 RideMetricPtr m = metrics.value(symbol);
                 if (!m) continue;
                 QString s("<td align=\"center\">%1</td>");
-                if (m->units(metricUnits) == "seconds")
+                if (m->units(metricUnits) == "seconds" || m->units(metricUnits) == tr("seconds"))
                     summary += s.arg(time_to_string(m->value(metricUnits)));
                 else
                     summary += s.arg(m->value(metricUnits), 0, 'f', m->precision());
@@ -251,11 +280,11 @@ RideSummaryWindow::htmlSummary() const
             summary += " <li>" + i.next();
         summary += "</ul>";
     }
-    summary += "<br><hr width=\"80%\"></center>";
+    summary += "<br><hr width=\"80%\">";
 
     // The extra <center> works around a bug in QT 4.3.1,
     // which will otherwise put the following above the <hr>.
-    summary += "<center>BikeScore is a trademark of Dr. Philip "
+    summary += "<br>BikeScore is a trademark of Dr. Philip "
         "Friere Skiba, PhysFarm Training Systems LLC</center>";
 
     return summary;

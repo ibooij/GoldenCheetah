@@ -610,19 +610,22 @@ AllPlotWindow::setAllPlotWidgets(RideItem *ride)
     // checkboxes to show/hide specific data series...
 	const RideFileDataPresent *dataPresent = ride->ride()->areDataPresent();
     if (ride->ride() && ride->ride()->deviceType() != QString("Manual CSV")) {
-
-	    showPower->setEnabled(dataPresent->watts);
-	    showHr->setEnabled(dataPresent->hr);
+            showPower->setEnabled(dataPresent->watts);
+            showHr->setEnabled(dataPresent->hr);
 	    showSpeed->setEnabled(dataPresent->kph);
 	    showCad->setEnabled(dataPresent->cad);
 	    showAlt->setEnabled(dataPresent->alt);
 
+            showHr->setChecked(dataPresent->hr);
+            showSpeed->setChecked(dataPresent->kph);
+            showCad->setChecked(dataPresent->cad);
+            showAlt->setChecked(dataPresent->alt);
     } else {
-	    showPower->setEnabled(false);
-	    showHr->setEnabled(false);
-	    showSpeed->setEnabled(false);
-	    showCad->setEnabled(false);
-	    showAlt->setEnabled(false);
+            showPower->setEnabled(false);
+            showHr->setEnabled(false);
+            showSpeed->setEnabled(false);
+            showCad->setEnabled(false);
+            showAlt->setEnabled(false);
     }
 
     // turn on/off shading, if it's not available
@@ -1261,9 +1264,13 @@ AllPlotWindow::setupStackPlots()
         _allPlot->setAxisTitle(QwtPlot::yRight2,text);
 
         _allPlot->setShadeZones(showPower->currentIndex() == 0);
-        // XXX todo - set the showHR, showCad stuff too...
+        // Set the showHR, showCad stuff too...
+        _allPlot->showSpeed(showSpeed->checkState());
+        _allPlot->showCad(showCad->checkState());
+        _allPlot->showAlt(showAlt->checkState());
+        _allPlot->showHr(showHr->checkState());
 
-	    _allPlot->replot();
+        _allPlot->replot();
     }
     newLayout->addStretch();
 

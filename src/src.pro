@@ -14,9 +14,9 @@ LIBS += -lm
 !isEmpty( LIBOAUTH_INSTALL ) {
 INCLUDEPATH += $${LIBOAUTH_INSTALL}/include
 LIBS +=  $${LIBOAUTH_INSTALL}/lib/liboauth.a
+LIBS += $${LIBCURL_INSTALL}
 LIBS += $${LIBCRYPTO_INSTALL}
 LIBS += $${LIBZ_INSTALL}
-LIBS += $${LIBCURL_INSTALL}
 DEFINES += GC_HAVE_LIBOAUTH
 SOURCES += TwitterDialog.cpp
 HEADERS += TwitterDialog.h
@@ -86,6 +86,9 @@ DEFINES += QXT_STATIC
 SOURCES += ../qxt/src/qxtspanslider.cpp
 HEADERS += ../qxt/src/qxtspanslider.h ../qxt/src/qxtspanslider_p.h
 
+# Enable Metrics Translation
+DEFINES += ENABLE_METRICS_TRANSLATION
+
 HEADERS += \
         Aerolab.h \
         AerolabWindow.h \
@@ -117,9 +120,12 @@ HEADERS += \
         FitRideFile.h \
         GcRideFile.h \
         GoogleMapControl.h \
+        GpxParser.h \
+        GpxRideFile.h \
         HistogramWindow.h \
         HrZones.h \
         IntervalItem.h \
+        JsonRideFile.h \
         LogTimeScaleDraw.h \
         LogTimeScaleEngine.h \
         LTMCanvasPicker.h \
@@ -130,6 +136,7 @@ HEADERS += \
         LTMTool.h \
         LTMTrend.h \
         LTMWindow.h \
+        MacroDevice.h \
         MainWindow.h \
         ManualRideDialog.h \
         ManualRideFile.h \
@@ -172,10 +179,15 @@ HEADERS += \
         SimpleNetworkClient.h \
         SpecialFields.h \
         SplitRideDialog.h \
+        SlfParser.h \
+        SlfRideFile.h \
+        SmfParser.h \
+        SmfRideFile.h \
         SrdRideFile.h \
         SrmRideFile.h \
         StressCalculator.h \
         SummaryMetrics.h \
+        SyncRideFile.h \
         TcxParser.h \
         TcxRideFile.h \
         TxtRideFile.h \
@@ -190,6 +202,13 @@ HEADERS += \
         WkoRideFile.h \
         Zones.h \
         ZoneScaleDraw.h
+
+YACCSOURCES = JsonRideFile.y
+LEXSOURCES = JsonRideFile.l
+
+#-t turns on debug, use with caution
+#QMAKE_YACCFLAGS = -t -d
+
 
 SOURCES += \
         AerobicDecoupling.cpp \
@@ -229,6 +248,8 @@ SOURCES += \
         FixTorque.cpp \
         GcRideFile.cpp \
         GoogleMapControl.cpp \
+        GpxParser.cpp \
+        GpxRideFile.cpp \
         HistogramWindow.cpp \
         HrTimeInZone.cpp \
         HrZones.cpp \
@@ -243,6 +264,7 @@ SOURCES += \
         LTMTool.cpp \
         LTMTrend.cpp \
         LTMWindow.cpp \
+        MacroDevice.cpp \
         MainWindow.cpp \
         ManualRideDialog.cpp \
         ManualRideFile.cpp \
@@ -285,10 +307,15 @@ SOURCES += \
         SimpleNetworkClient.cpp \
         SpecialFields.cpp \
         SplitRideDialog.cpp \
+        SlfParser.cpp \
+        SlfRideFile.cpp \
+        SmfParser.cpp \
+        SmfRideFile.cpp \
         SrdRideFile.cpp \
         SrmRideFile.cpp \
         StressCalculator.cpp \
-	TacxCafRideFile.cpp \
+        SyncRideFile.cpp \
+	    TacxCafRideFile.cpp \
         TcxParser.cpp \
         TcxRideFile.cpp \
         TxtRideFile.cpp \
@@ -307,5 +334,12 @@ SOURCES += \
 
 RESOURCES = application.qrc
 
-TRANSLATIONS = translations/gc_fr.ts translations/gc_ja.ts
+TRANSLATIONS = translations/gc_fr.ts \
+               translations/gc_ja.ts \
+               translations/gc_it.ts \
+               translations/gc_pt-br.ts \
+               translations/gc_de.ts \
+               translations/gc_cs.ts \
+               translations/gc_es.ts \
+               translations/gc_ru.ts
 

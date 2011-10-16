@@ -594,8 +594,10 @@ PowerHist::recalc()
             }
         }
         totalTime[i] = 1e-9;       // nonzero to accomodate log plot
+        totalTimeSelected[i] = 1e-9;
         parameterValue[i] = i * delta * binw;
         totalTime[0] = 1e-9;
+        totalTimeSelected[0] = 1e-9;
         parameterValue[0] = 0;
 
         // convert vectors from absolute time to percentage
@@ -971,12 +973,14 @@ PowerHist::setlnY(bool value)
     if (lny && selected != wattsZone && selected != hrZone)
     {
         setAxisScaleEngine(yLeft, new QwtLog10ScaleEngine);
-	curve->setBaseline(1e-6);
+	    curve->setBaseline(1e-6);
+	    curveSelected->setBaseline(1e-6);
     }
     else
     {
         setAxisScaleEngine(yLeft, new QwtLinearScaleEngine);
-	curve->setBaseline(0);
+	    curve->setBaseline(0);
+	    curveSelected->setBaseline(0);
     }
     setYMax();
     replot();
@@ -1012,7 +1016,7 @@ PowerHist::setParameterAxisTitle()
             axislabel = tr("Cadence (rpm)");
             break;
         case kph:
-            axislabel = QString(tr("Speed (%1)")).arg(useMetricUnits ? tr("kph") : tr("mph"));
+            axislabel = QString(tr("Speed (%1)")).arg(useMetricUnits ? tr("km/h") : tr("mph"));
             break;
         case nm:
             axislabel = QString(tr("Torque (%1)")).arg(useMetricUnits ? tr("N-m") : tr("ft-lbf"));

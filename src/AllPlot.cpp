@@ -221,8 +221,7 @@ AllPlot::AllPlot(AllPlotWindow *parent, MainWindow *mainWindow):
     else shade_zones = true;
 
     smooth = settings->value(GC_RIDE_PLOT_SMOOTHING).toInt();
-    if (smooth < 2)
-        smooth = 30;
+    if (smooth < 1) smooth = 1;
 
     // create a background object for shading
     bg = new AllPlotBackground(this);
@@ -517,7 +516,7 @@ void
 AllPlot::setYMax()
 {
     if (wattsCurve->isVisible()) {
-        setAxisTitle(yLeft, "Watts");
+        setAxisTitle(yLeft, tr("Watts"));
         if (referencePlot == NULL)
             setAxisScale(yLeft, 0.0, 1.05 * wattsCurve->maxYValue());
         else
@@ -529,14 +528,14 @@ AllPlot::setYMax()
         double ymax = 0;
         QStringList labels;
         if (hrCurve->isVisible()) {
-            labels << "BPM";
+            labels << tr("BPM");
             if (referencePlot == NULL)
                 ymax = hrCurve->maxYValue();
             else
                 ymax = referencePlot->hrCurve->maxYValue();
         }
         if (cadCurve->isVisible()) {
-            labels << "RPM";
+            labels << tr("RPM");
             if (referencePlot == NULL)
                 ymax = qMax(ymax, cadCurve->maxYValue());
             else
@@ -548,7 +547,7 @@ AllPlot::setYMax()
         setAxisLabelAlignment(yLeft2,Qt::AlignVCenter);
     }
     if (speedCurve->isVisible()) {
-        setAxisTitle(yRight, (useMetricUnits ? tr("KPH") : tr("MPH")));
+        setAxisTitle(yRight, (useMetricUnits ? tr("km/h") : tr("MPH")));
         if (referencePlot == NULL)
             setAxisScale(yRight, 0.0, 1.05 * speedCurve->maxYValue());
         else
@@ -702,7 +701,21 @@ AllPlot::setDataFromRide(RideItem *_rideItem)
 
         arrayLength = 0;
         foreach (const RideFilePoint *point, ride->dataPoints()) {
-            timeArray[arrayLength]  = point->secs;
+
+            // we round the time to nearest 100th of a second
+            // before adding to the array, to avoid situation
+            // where 'high precision' time slice is an artefact
+            // of double precision or slight timing anomalies
+            // e.g. where realtime gives timestamps like
+            // 940.002 followed by 940.998 and were previouslt
+            // both rounded to 940s
+            //
+            // NOTE: this rounding mechanism is identical to that
+            //       used by the Ride Editor.
+            double secs = floor(point->secs);
+            double msecs = round((point->secs - secs) * 100) * 10;
+
+            timeArray[arrayLength]  = secs + msecs/1000;
             if (!wattsArray.empty())
                 wattsArray[arrayLength] = max(0, point->watts);
             if (!hrArray.empty())

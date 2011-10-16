@@ -39,9 +39,9 @@ void Zones::initializeZoneParameters()
     static int initial_zone_default[] = {
         0, 55, 75, 90, 105, 120, 150
     };
-    static const char *initial_zone_default_desc[] = {
-        "Active Recovery", "Endurance", "Tempo", "Threshold",
-        "VO2Max", "Anaerobic", "Neuromuscular"
+    static const QString initial_zone_default_desc[] = {
+        tr("Active Recovery"), tr("Endurance"), tr("Tempo"), tr("Threshold"),
+        tr("VO2Max"), tr("Anaerobic"), tr("Neuromuscular")
     };
     static const char *initial_zone_default_name[] = {
         "Z1", "Z2", "Z3", "Z4", "Z5", "Z6", "Z7"
@@ -63,7 +63,7 @@ void Zones::initializeZoneParameters()
 	    scheme.zone_default.append(initial_zone_default[z]);
 	    scheme.zone_default_is_pct.append(true);
 	    scheme.zone_default_name.append(QString(initial_zone_default_name[z]));
-	    scheme.zone_default_desc.append(QString(initial_zone_default_desc[z]));
+	    scheme.zone_default_desc.append(initial_zone_default_desc[z]);
     }
 }
 
@@ -437,7 +437,10 @@ int Zones::whichZone(int rnum, double value) const
         if ((value >= info.lo) && (value < info.hi))
             return j;
     }
-    return -1;
+
+    // if we got here either it is negative, nan, inf or way high
+    if (value < 0 || isnan(value)) return 0;
+    else return range.zones.size()-1;
 }
 
 void Zones::zoneInfo(int rnum, int znum,
@@ -565,7 +568,7 @@ QString Zones::summarize(int rnum, QVector<double> &time_in_zone) const
     if(range.cp > 0){
         summary += "<table align=\"center\" width=\"70%\" border=\"0\">";
         summary += "<tr><td align=\"center\">";
-        summary += tr("Critical Power: %1").arg(range.cp);
+        summary += tr("Critical Power (watts): %1").arg(range.cp);
         summary += "</td></tr></table>";
     }
     summary += "<table align=\"center\" width=\"70%\" ";
@@ -573,12 +576,17 @@ QString Zones::summarize(int rnum, QVector<double> &time_in_zone) const
     summary += "<tr>";
     summary += tr("<td align=\"center\">Zone</td>");
     summary += tr("<td align=\"center\">Description</td>");
-    summary += tr("<td align=\"center\">Low</td>");
-    summary += tr("<td align=\"center\">High</td>");
+    summary += tr("<td align=\"center\">Low (watts)</td>");
+    summary += tr("<td align=\"center\">High (watts)</td>");
     summary += tr("<td align=\"center\">Time</td>");
+    summary += tr("<td align=\"center\">%</td>");
     summary += "</tr>";
     QColor color = QApplication::palette().alternateBase().color();
     color = QColor::fromHsv(color.hue(), color.saturation() * 2, color.value());
+
+    double duration = 0;
+    foreach(double v, time_in_zone) { duration += v; }
+
     for (int zone = 0; zone < time_in_zone.size(); ++zone) {
         if (time_in_zone[zone] > 0.0) {
             QString name, desc;
@@ -597,6 +605,8 @@ QString Zones::summarize(int rnum, QVector<double> &time_in_zone) const
                 summary += QString("<td align=\"center\">%1</td>").arg(hi);
             summary += QString("<td align=\"center\">%1</td>")
                 .arg(time_to_string((unsigned) round(time_in_zone[zone])));
+            summary += QString("<td align=\"center\">%1</td>")
+                .arg((double)time_in_zone[zone]/duration * 100, 0, 'f', 0);
             summary += "</tr>";
         }
     }

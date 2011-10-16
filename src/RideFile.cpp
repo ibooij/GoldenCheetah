@@ -254,6 +254,20 @@ RideFile *RideFileFactory::openRideFile(QFile &file,
     // NULL returned to indicate openRide failed
     if (result) {
         if (result->intervals().empty()) result->fillInIntervals();
+
+        // override the file ride time with that set from the filename
+        // but only if it matches the GC format
+        QFileInfo fileInfo(file.fileName());
+        QRegExp rx ("^((\\d\\d\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d))\\.(.+)$");
+
+        if (rx.exactMatch(fileInfo.fileName())) {
+
+            QDate date(rx.cap(2).toInt(), rx.cap(3).toInt(),rx.cap(4).toInt());
+            QTime time(rx.cap(5).toInt(), rx.cap(6).toInt(),rx.cap(7).toInt());
+            QDateTime datetime(date, time);
+            result->setStartTime(datetime);
+        }
+
         result->setTag("Filename", file.fileName());
         result->setTag("Athlete", QFileInfo(file).dir().dirName());
         DataProcessorFactory::instance().autoProcess(result);
@@ -287,6 +301,17 @@ void RideFile::appendPoint(double secs, double cad, double hr, double km,
                            double kph, double nm, double watts, double alt,
                            double lon, double lat, double headwind, int interval)
 {
+    // negative values are not good, make them zero
+    // although alt, lat, lon, headwind can be negative of course!
+    if (!isfinite(secs) || secs<0) secs=0;
+    if (!isfinite(cad) || cad<0) cad=0;
+    if (!isfinite(hr) || hr<0) hr=0;
+    if (!isfinite(km) || km<0) km=0;
+    if (!isfinite(kph) || kph<0) kph=0;
+    if (!isfinite(nm) || nm<0) nm=0;
+    if (!isfinite(watts) || watts<0) watts=0;
+    if (!isfinite(interval) || interval<0) interval=0;
+
     dataPoints_.append(new RideFilePoint(secs, cad, hr, km, kph,
                                          nm, watts, alt, lon, lat, headwind, interval));
     dataPresent.secs  |= (secs != 0);

@@ -363,7 +363,7 @@ WKO_UCHAR *WkoParseRawData(WKO_UCHAR *fb, RideFile *rideFile, QStringList &error
                         break;
                     case 'G' : /* two longs */
                         {
-                            signed long llat, llon;
+                            int32_t llat, llon;
                             char slat[20], slon[20];
 
                             // stored 2s complement
@@ -372,13 +372,19 @@ WKO_UCHAR *WkoParseRawData(WKO_UCHAR *fb, RideFile *rideFile, QStringList &error
                             memcpy(&llat, &val, 4);
                             lat = (double)llat;
                             lat *= 0.00000008381903171539306640625;
-                            sprintf(slat, "%-3.9g", lat);
 
                             val = get_bits(thelot, bit-32,32);
                             memcpy(&llon, &val, 4);
                             lon = (double)llon;
                             lon *= 0.00000008381903171539306640625;
+
+                            // WKO handles drops in recording of GPS data
+                            // as 180,180 -- we expect 0,0
+                            llat=round(lat); llon=round(lon);
+                            if (llat == 180 && llon == 180) lat=lon=0;
+
                             sprintf(slon, "%-3.9g", lon);
+                            sprintf(slat, "%-3.9g", lat);
 
                             sprintf(GRAPHDATA[i], "%13s %13s", slat,slon);
 
@@ -1064,13 +1070,13 @@ unsigned int bitsize(char g, int WKO_device)
         case 0x04:
         case 0x05:
         case 0x06:
-        case 0x11:
         case 0x19:
         default:
             return 19;
             break;
         case 0x01:
         case 0x16: // Cycleops PT300
+        case 0x11:
         case 0x00:
         case 0x12: // Garmin Edge 205/305
         case 0x13:

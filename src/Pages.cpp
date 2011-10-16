@@ -19,11 +19,13 @@ ConfigurationPage::ConfigurationPage(MainWindow *main) : main(main)
     QWidget *config = new QWidget(this);
     QVBoxLayout *configLayout = new QVBoxLayout(config);
     colorsPage = new ColorsPage(main);
+    summaryMetrics = new SummaryMetricsPage;
     intervalMetrics = new IntervalMetricsPage;
     metadataPage = new MetadataPage(main);
 
     tabs->addTab(config, tr("Basic Settings"));
     tabs->addTab(colorsPage, tr("Colors"));
+    tabs->addTab(summaryMetrics, tr("Summary Metrics"));
     tabs->addTab(intervalMetrics, tr("Interval Metrics"));
     tabs->addTab(metadataPage, tr("Ride Data"));
 
@@ -35,15 +37,34 @@ ConfigurationPage::ConfigurationPage(MainWindow *main) : main(main)
     langCombo->addItem(tr("English"));
     langCombo->addItem(tr("French"));
     langCombo->addItem(tr("Japanese"));
+    langCombo->addItem(tr("Portugese (Brazil)"));
+    langCombo->addItem(tr("Italian"));
+    langCombo->addItem(tr("German"));
+    langCombo->addItem(tr("Russian"));
+    langCombo->addItem(tr("Czech"));
+    langCombo->addItem(tr("Spanish"));
 
-    QVariant lang = settings->value(GC_LANG);
+    // Default to system locale
+    QVariant lang = settings->value(GC_LANG, QLocale::system().name());
 
-    if(lang.toString() == "en")
+    if(lang.toString().startsWith("en"))
         langCombo->setCurrentIndex(0);
-    else if(lang.toString() == "fr")
+    else if(lang.toString().startsWith("fr"))
         langCombo->setCurrentIndex(1);
-    else if(lang.toString() == "ja")
+    else if(lang.toString().startsWith("ja"))
         langCombo->setCurrentIndex(2);
+    else if(lang.toString().startsWith("pt-br"))
+        langCombo->setCurrentIndex(3);
+    else if(lang.toString().startsWith("it"))
+        langCombo->setCurrentIndex(4);
+    else if(lang.toString().startsWith("de"))
+        langCombo->setCurrentIndex(5);
+    else if(lang.toString().startsWith("ru"))
+        langCombo->setCurrentIndex(6);
+    else if(lang.toString().startsWith("cs"))
+        langCombo->setCurrentIndex(7);
+    else if(lang.toString().startsWith("es"))
+        langCombo->setCurrentIndex(8);
     else // default : English
         langCombo->setCurrentIndex(0);
 
@@ -128,6 +149,18 @@ ConfigurationPage::ConfigurationPage(MainWindow *main) : main(main)
     garminLayout->addWidget(garminHWMarkedit,1,1);
     garminLayout->addWidget(garminHWLabel2,1,2);
 
+    // Map interval period
+    QVariant mapInterval = settings->value(GC_MAP_INTERVAL);
+    if (mapInterval.isNull() || mapInterval.toInt() == 0)
+      mapInterval.setValue(30); // by default its 30 sec
+    QGridLayout *mapIntervalLayout = new QGridLayout;
+    QLabel *mapIntervalLabel1 = new QLabel(tr("Map interval period"));
+    QLabel *mapIntervalLabel2 = new QLabel(tr(" secs."));
+    mapIntervaledit = new QLineEdit(mapInterval.toString(),this);
+    mapIntervaledit->setInputMask("009");
+    mapIntervalLayout->addWidget(mapIntervalLabel1,1,0);
+    mapIntervalLayout->addWidget(mapIntervaledit,1,1);
+    mapIntervalLayout->addWidget(mapIntervalLabel2,1,2);
 
     warningLabel = new QLabel(tr("Requires Restart To Take Effect"));
 
@@ -193,6 +226,7 @@ ConfigurationPage::ConfigurationPage(MainWindow *main) : main(main)
     configLayout->addWidget(allRidesAscending);
     configLayout->addLayout(garminLayout);
     //SmartRecord);
+    configLayout->addLayout(mapIntervalLayout);
     configLayout->addLayout(crankLengthLayout);
     configLayout->addLayout(bsDaysLayout);
     configLayout->addLayout(bsModeLayout);
@@ -208,6 +242,7 @@ void
 ConfigurationPage::saveClicked()
 {
     colorsPage->saveClicked();
+    summaryMetrics->saveClicked();
     intervalMetrics->saveClicked();
     metadataPage->saveClicked();
 }
@@ -247,12 +282,17 @@ CyclistPage::CyclistPage(MainWindow *main) :
     perfManStartLabel = new QLabel(tr("Starting LTS"));
     perfManSTSLabel = new QLabel(tr("STS average (days)"));
     perfManLTSLabel = new QLabel(tr("LTS average (days)"));
+    perfManDaysLabel = new QLabel(tr("Default range (days)"));
     perfManStartValidator = new QIntValidator(0,200,this);
     perfManSTSavgValidator = new QIntValidator(1,21,this);
     perfManLTSavgValidator = new QIntValidator(7,56,this);
+    perfManDaysValidator = new QIntValidator(1,182,this);
     QVariant perfManStartVal = settings->value(GC_INITIAL_STS);
     QVariant perfManSTSVal = settings->value(GC_STS_DAYS);
+    QVariant perfManDaysVal = settings->value(GC_PM_DAYS);
 
+    if (perfManDaysVal.isNull() || perfManDaysVal.toInt() == 0)
+        perfManDaysVal = 182;
     if (perfManSTSVal.isNull() || perfManSTSVal.toInt() == 0)
 	perfManSTSVal = 7;
     QVariant perfManLTSVal = settings->value(GC_LTS_DAYS);
@@ -264,12 +304,17 @@ CyclistPage::CyclistPage(MainWindow *main) :
     perfManSTSavg->setValidator(perfManSTSavgValidator);
     perfManLTSavg = new QLineEdit(perfManLTSVal.toString(),this);
     perfManLTSavg->setValidator(perfManLTSavgValidator);
+    perfManDays = new QLineEdit(perfManDaysVal.toString(),this);
+    perfManDays->setValidator(perfManDaysValidator);
 
     // performance manager
     perfManLayout = new QVBoxLayout(); // outer
     perfManStartValLayout = new QHBoxLayout();
     perfManSTSavgLayout = new QHBoxLayout();
     perfManLTSavgLayout = new QHBoxLayout();
+    perfManDaysLayout = new QHBoxLayout();
+    perfManDaysLayout->addWidget(perfManDaysLabel);
+    perfManDaysLayout->addWidget(perfManDays);
     perfManStartValLayout->addWidget(perfManStartLabel);
     perfManStartValLayout->addWidget(perfManStart);
     perfManSTSavgLayout->addWidget(perfManSTSLabel);
@@ -277,6 +322,7 @@ CyclistPage::CyclistPage(MainWindow *main) :
     perfManLTSavgLayout->addWidget(perfManLTSLabel);
     perfManLTSavgLayout->addWidget(perfManLTSavg);
     perfManLayout->addWidget(showSBToday);
+    perfManLayout->addLayout(perfManDaysLayout);
     perfManLayout->addLayout(perfManStartValLayout);
     perfManLayout->addLayout(perfManSTSavgLayout);
     perfManLayout->addLayout(perfManLTSavgLayout);
@@ -343,6 +389,19 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent)
     profLabel = new QLabel(tr("Device Profile"),this);
     deviceProfile = new QLineEdit(tr(""), this);
 
+    virtualPowerLabel = new QLabel(tr("Virtual Channel"), this);
+    virtualPower = new QComboBox(this);
+
+    // XXX NOTE: THESE MUST CORRESPOND TO THE CODE
+    //           IN RealtimeController.cpp WHICH
+    //           POST-PROCESSES INBOUND TELEMETRY
+    virtualPower->addItem("None");
+    virtualPower->addItem("Power - Kurt Kinetic Cyclone");
+    virtualPower->addItem("Power - Kurt Kinetic Road Machine");
+    virtualPower->addItem("Power - Cyclops Fluid 2");
+    virtualPower->addItem("Power - BT Advanced Training System");
+    virtualPower->setCurrentIndex(0);
+
 // THIS CODE IS DISABLED FOR THIS RELEASE XXX
 //    isDefaultDownload = new QCheckBox(tr("Default download device"), this);
 //    isDefaultRealtime = new QCheckBox(tr("Default realtime device"), this);
@@ -391,6 +450,8 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent)
     leftLayout->addWidget(profLabel, 5,0);
     leftLayout->addWidget(deviceProfile, 5,2);
     leftLayout->setColumnMinimumWidth(1,10);
+    leftLayout->addWidget(virtualPowerLabel, 6,0);
+    leftLayout->addWidget(virtualPower, 6,2);
 
 // THIS CODE IS DISABLED FOR THIS RELEASE XXX
 //    leftLayout->addWidget(isDefaultDownload, 6,1);
@@ -489,6 +550,10 @@ deviceModel::add(DeviceConfiguration &newone)
     // insert Profile
     index = deviceModel::index(0,3, QModelIndex());
     setData(index, newone.deviceProfile, Qt::EditRole);
+
+    // insert postProcess
+    index = deviceModel::index(0,4, QModelIndex());
+    setData(index, newone.postProcess, Qt::EditRole);
 }
 
 // delete an existing configuration
@@ -535,7 +600,7 @@ deviceModel::rowCount(const QModelIndex &parent) const
 int
 deviceModel::columnCount(const QModelIndex &) const
 {
-    return 4;
+    return 5;
 }
 
 
@@ -554,6 +619,8 @@ QVariant deviceModel::headerData(int section, Qt::Orientation orientation, int r
                  return tr("Port Spec");
              case 3:
                  return tr("Profile");
+             case 4:
+                 return tr("Virtual");
              default:
                  return QVariant();
          }
@@ -585,6 +652,8 @@ QVariant deviceModel::data(const QModelIndex &index, int role) const
                 break;
             case 3 :
                 return Entry.deviceProfile;
+            case 4 :
+                return Entry.postProcess;
          }
      }
 
@@ -640,6 +709,9 @@ bool deviceModel::setData(const QModelIndex &index, const QVariant &value, int r
                 case 3 : // Profile
                     p.deviceProfile = value.toString();
                     break;
+                case 4 : // Profile
+                    p.postProcess = value.toInt();
+                    break;
             }
             Configuration.replace(row,p);
                 emit(dataChanged(index, index));
@@ -655,8 +727,8 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
     colors = new QTreeWidget;
-    colors->headerItem()->setText(0, "Color");
-    colors->headerItem()->setText(1, "Select");
+    colors->headerItem()->setText(0, tr("Color"));
+    colors->headerItem()->setText(1, tr("Select"));
     colors->setColumnCount(2);
     colors->setSelectionMode(QAbstractItemView::NoSelection);
     //colors->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
@@ -708,10 +780,10 @@ IntervalMetricsPage::IntervalMetricsPage(QWidget *parent) :
     QVBoxLayout *selectedLayout = new QVBoxLayout;
     selectedLayout->addWidget(new QLabel(tr("Selected Metrics")));
     selectedLayout->addWidget(selectedList);
-    upButton = new QPushButton("Move up");
-    downButton = new QPushButton("Move down");
-    leftButton = new QPushButton("Exclude");
-    rightButton = new QPushButton("Include");
+    upButton = new QPushButton(tr("Move up"));
+    downButton = new QPushButton(tr("Move down"));
+    leftButton = new QPushButton(tr("Exclude"));
+    rightButton = new QPushButton(tr("Include"));
     QVBoxLayout *buttonGrid = new QVBoxLayout;
     QHBoxLayout *upLayout = new QHBoxLayout;
     QHBoxLayout *inexcLayout = new QHBoxLayout;
@@ -874,6 +946,187 @@ IntervalMetricsPage::saveClicked()
     settings->setValue(GC_SETTINGS_INTERVAL_METRICS, metrics.join(","));
 }
 
+
+SummaryMetricsPage::SummaryMetricsPage(QWidget *parent) :
+    QWidget(parent), changed(false)
+{
+    availList = new QListWidget;
+    availList->setSortingEnabled(true);
+    availList->setSelectionMode(QAbstractItemView::SingleSelection);
+    QVBoxLayout *availLayout = new QVBoxLayout;
+    availLayout->addWidget(new QLabel(tr("Available Metrics")));
+    availLayout->addWidget(availList);
+    selectedList = new QListWidget;
+    selectedList->setSelectionMode(QAbstractItemView::SingleSelection);
+    QVBoxLayout *selectedLayout = new QVBoxLayout;
+    selectedLayout->addWidget(new QLabel(tr("Selected Metrics")));
+    selectedLayout->addWidget(selectedList);
+    upButton = new QPushButton(tr("Move up"));
+    downButton = new QPushButton(tr("Move down"));
+    leftButton = new QPushButton(tr("Exclude"));
+    rightButton = new QPushButton(tr("Include"));
+    QVBoxLayout *buttonGrid = new QVBoxLayout;
+    QHBoxLayout *upLayout = new QHBoxLayout;
+    QHBoxLayout *inexcLayout = new QHBoxLayout;
+    QHBoxLayout *downLayout = new QHBoxLayout;
+
+    upLayout->addStretch();
+    upLayout->addWidget(upButton);
+    upLayout->addStretch();
+
+    inexcLayout->addStretch();
+    inexcLayout->addWidget(leftButton);
+    inexcLayout->addWidget(rightButton);
+    inexcLayout->addStretch();
+
+    downLayout->addStretch();
+    downLayout->addWidget(downButton);
+    downLayout->addStretch();
+
+    buttonGrid->addStretch();
+    buttonGrid->addLayout(upLayout);
+    buttonGrid->addLayout(inexcLayout);
+    buttonGrid->addLayout(downLayout);
+    buttonGrid->addStretch();
+
+    QHBoxLayout *hlayout = new QHBoxLayout;
+    hlayout->addLayout(availLayout);
+    hlayout->addLayout(buttonGrid);
+    hlayout->addLayout(selectedLayout);
+    setLayout(hlayout);
+
+    QString s;
+    boost::shared_ptr<QSettings> settings = GetApplicationSettings();
+    if (settings->contains(GC_SETTINGS_SUMMARY_METRICS))
+        s = settings->value(GC_SETTINGS_SUMMARY_METRICS).toString();
+    else
+        s = GC_SETTINGS_SUMMARY_METRICS_DEFAULT;
+    QStringList selectedMetrics = s.split(",");
+
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    for (int i = 0; i < factory.metricCount(); ++i) {
+        QString symbol = factory.metricName(i);
+        if (selectedMetrics.contains(symbol))
+            continue;
+        QSharedPointer<RideMetric> m(factory.newMetric(symbol));
+        QString name = m->name();
+        name.replace(tr("&#8482;"), tr(" (TM)"));
+        QListWidgetItem *item = new QListWidgetItem(name);
+        item->setData(Qt::UserRole, symbol);
+        availList->addItem(item);
+    }
+    foreach (QString symbol, selectedMetrics) {
+        if (!factory.haveMetric(symbol))
+            continue;
+        QSharedPointer<RideMetric> m(factory.newMetric(symbol));
+        QString name = m->name();
+        name.replace(tr("&#8482;"), tr(" (TM)"));
+        QListWidgetItem *item = new QListWidgetItem(name);
+        item->setData(Qt::UserRole, symbol);
+        selectedList->addItem(item);
+    }
+
+    upButton->setEnabled(false);
+    downButton->setEnabled(false);
+    leftButton->setEnabled(false);
+    rightButton->setEnabled(false);
+
+    connect(upButton, SIGNAL(clicked()), this, SLOT(upClicked()));
+    connect(downButton, SIGNAL(clicked()), this, SLOT(downClicked()));
+    connect(leftButton, SIGNAL(clicked()), this, SLOT(leftClicked()));
+    connect(rightButton, SIGNAL(clicked()), this, SLOT(rightClicked()));
+    connect(availList, SIGNAL(itemSelectionChanged()),
+            this, SLOT(availChanged()));
+    connect(selectedList, SIGNAL(itemSelectionChanged()),
+            this, SLOT(selectedChanged()));
+}
+
+void
+SummaryMetricsPage::upClicked()
+{
+    assert(!selectedList->selectedItems().isEmpty());
+    QListWidgetItem *item = selectedList->selectedItems().first();
+    int row = selectedList->row(item);
+    assert(row > 0);
+    selectedList->takeItem(row);
+    selectedList->insertItem(row - 1, item);
+    selectedList->setCurrentItem(item);
+    changed = true;
+}
+
+void
+SummaryMetricsPage::downClicked()
+{
+    assert(!selectedList->selectedItems().isEmpty());
+    QListWidgetItem *item = selectedList->selectedItems().first();
+    int row = selectedList->row(item);
+    assert(row < selectedList->count() - 1);
+    selectedList->takeItem(row);
+    selectedList->insertItem(row + 1, item);
+    selectedList->setCurrentItem(item);
+    changed = true;
+}
+
+void
+SummaryMetricsPage::leftClicked()
+{
+    assert(!selectedList->selectedItems().isEmpty());
+    QListWidgetItem *item = selectedList->selectedItems().first();
+    selectedList->takeItem(selectedList->row(item));
+    availList->addItem(item);
+    changed = true;
+}
+
+void
+SummaryMetricsPage::rightClicked()
+{
+    assert(!availList->selectedItems().isEmpty());
+    QListWidgetItem *item = availList->selectedItems().first();
+    availList->takeItem(availList->row(item));
+    selectedList->addItem(item);
+    changed = true;
+}
+
+void
+SummaryMetricsPage::availChanged()
+{
+    rightButton->setEnabled(!availList->selectedItems().isEmpty());
+}
+
+void
+SummaryMetricsPage::selectedChanged()
+{
+    if (selectedList->selectedItems().isEmpty()) {
+        upButton->setEnabled(false);
+        downButton->setEnabled(false);
+        leftButton->setEnabled(false);
+        return;
+    }
+    QListWidgetItem *item = selectedList->selectedItems().first();
+    int row = selectedList->row(item);
+    if (row == 0)
+        upButton->setEnabled(false);
+    else
+        upButton->setEnabled(true);
+    if (row == selectedList->count() - 1)
+        downButton->setEnabled(false);
+    else
+        downButton->setEnabled(true);
+    leftButton->setEnabled(true);
+}
+
+void
+SummaryMetricsPage::saveClicked()
+{
+    if (!changed)
+        return;
+    QStringList metrics;
+    for (int i = 0; i < selectedList->count(); ++i)
+        metrics << selectedList->item(i)->data(Qt::UserRole).toString();
+    boost::shared_ptr<QSettings> settings = GetApplicationSettings();
+    settings->setValue(GC_SETTINGS_SUMMARY_METRICS, metrics.join(","));
+}
+
 MetadataPage::MetadataPage(MainWindow *main) : main(main)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -907,19 +1160,6 @@ MetadataPage::saveClicked()
 
     // save processors config
     processorPage->saveClicked();
-}
-
-// little helper since we create/recreate combos
-// for field types all over the place (init, move up, move down)
-static void addFieldTypes(QComboBox *p)
-{
-    p->addItem("Text");
-    p->addItem("Textbox");
-    p->addItem("ShortText");
-    p->addItem("Integer");
-    p->addItem("Double");
-    p->addItem("Date");
-    p->addItem("Time");
 }
 
 KeywordsPage::KeywordsPage(QWidget *parent, QList<KeywordDefinition>keywordDefinitions) : QWidget(parent)
@@ -1088,6 +1328,20 @@ KeywordsPage::getDefinitions(QList<KeywordDefinition> &keywordList)
     }
 }
 
+// little helper since we create/recreate combos
+// for field types all over the place (init, move up, move down)
+void
+FieldsPage::addFieldTypes(QComboBox *p)
+{
+    p->addItem(tr("Text"));
+    p->addItem(tr("Textbox"));
+    p->addItem(tr("ShortText"));
+    p->addItem(tr("Integer"));
+    p->addItem(tr("Double"));
+    p->addItem(tr("Date"));
+    p->addItem(tr("Time"));
+}
+
 FieldsPage::FieldsPage(QWidget *parent, QList<FieldDefinition>fieldDefinitions) : QWidget(parent)
 {
     QGridLayout *mainLayout = new QGridLayout(this);
@@ -1119,6 +1373,9 @@ FieldsPage::FieldsPage(QWidget *parent, QList<FieldDefinition>fieldDefinitions) 
     fields->header()->resizeSection(1,140);
 
     SpecialFields specials;
+#ifdef ENABLE_METRICS_TRANSLATION
+    SpecialTabs specialTabs;
+#endif
     foreach(FieldDefinition field, fieldDefinitions) {
         QTreeWidgetItem *add;
         QComboBox *comboButton = new QComboBox(this);
@@ -1134,10 +1391,17 @@ FieldsPage::FieldsPage(QWidget *parent, QList<FieldDefinition>fieldDefinitions) 
         add = new QTreeWidgetItem(fields->invisibleRootItem());
         add->setFlags(add->flags() | Qt::ItemIsEditable);
 
+#ifdef ENABLE_METRICS_TRANSLATION
+        // tab name
+        add->setText(0, specialTabs.displayName(field.tab));
+        // field name
+        add->setText(1, specials.displayName(field.name));
+#else
         // tab name
         add->setText(0, field.tab);
         // field name
         add->setText(1, field.name);
+#endif
 
         // type button
         add->setTextAlignment(2, Qt::AlignHCenter);
@@ -1240,6 +1504,9 @@ void
 FieldsPage::getDefinitions(QList<FieldDefinition> &fieldList)
 {
     SpecialFields sp;
+#ifdef ENABLE_METRICS_TRANSLATION
+    SpecialTabs st;
+#endif
     QStringList checkdups;
 
     // clear current just in case
@@ -1254,8 +1521,13 @@ FieldsPage::getDefinitions(QList<FieldDefinition> &fieldList)
         if (checkdups.contains(item->text(1))) continue;
         else checkdups << item->text(1);
 
+#ifdef ENABLE_METRICS_TRANSLATION
+        add.tab = st.internalName(item->text(0));
+        add.name = sp.internalName(item->text(1));
+#else
         add.tab = item->text(0);
         add.name = item->text(1);
+#endif
 
         if (sp.isMetric(add.name))
             add.type = 4;
@@ -1299,8 +1571,8 @@ ProcessorPage::ProcessorPage(MainWindow *main) : main(main)
         add = new QTreeWidgetItem(processorTree->invisibleRootItem());
         add->setFlags(add->flags() & ~Qt::ItemIsEditable);
 
-        // Processor Name
-        add->setText(0, i.key());
+        // Processor Name - changed to show localized name
+        add->setText(0, i.value()->name());
 
         // Auto or Manual run?
         QComboBox *comboButton = new QComboBox(this);

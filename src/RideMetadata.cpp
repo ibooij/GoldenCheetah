@@ -68,11 +68,19 @@ RideMetadata::configUpdate()
         if (field.tab == "") continue; // not to be shown!
 
         Form *form;
+#ifdef ENABLE_METRICS_TRANSLATION
+        if ((form = tabList.value(specialTabs.displayName(field.tab), NULL)) == NULL) {
+            form = new Form(main, this);
+            tabs->addTab(form, specialTabs.displayName(field.tab));
+            tabList.insert(specialTabs.displayName(field.tab), form);
+        }
+#else
         if ((form = tabList.value(field.tab, NULL)) == NULL) {
-            form = new Form(main);
+            form = new Form(main, this);
             tabs->addTab(form, field.tab);
             tabList.insert(field.tab, form);
         }
+#endif
         form->addField(field);
     }
 
@@ -87,10 +95,37 @@ RideMetadata::configUpdate()
     main->notifyRideSelected(); // refresh
 }
 
+void
+RideMetadata::warnDateTime(QDateTime datetime)
+{
+    if (main->rideItem() == NULL) return;
+
+    // see if there is a ride with this date/time already?
+    // Check if an existing ride has the same starttime
+    QChar zero = QLatin1Char('0');
+    QString targetnosuffix = QString ("%1_%2_%3_%4_%5_%6")
+                           .arg(datetime.date().year(), 4, 10, zero)
+                           .arg(datetime.date().month(), 2, 10, zero)
+                           .arg(datetime.date().day(), 2, 10, zero)
+                           .arg(datetime.time().hour(), 2, 10, zero)
+                           .arg(datetime.time().minute(), 2, 10, zero)
+                           .arg(datetime.time().second(), 2, 10, zero);
+
+    // now make a regexp for all know ride types
+    foreach(QString suffix, RideFileFactory::instance().suffixes()) {
+
+        QString conflict = main->home.absolutePath() + "/" + targetnosuffix + "." + suffix;
+        if (QFile(conflict).exists() && QFileInfo(conflict).fileName() != main->rideItem()->fileName) {
+            QMessageBox::warning(this, "Date/Time Entry", "A ride already exists with that date/time, if you do not change it then you will overwrite and lose existing data");
+            return; // only warn on the first conflict!
+        }
+    }
+}
+
 /*----------------------------------------------------------------------
  * Forms (one per tab)
  *--------------------------------------------------------------------*/
-Form::Form(MainWindow *main) : main(main)
+Form::Form(MainWindow *main, RideMetadata *meta) : main(main), meta(meta)
 {
     contents = new QWidget;
     QVBoxLayout *mainLayout = new QVBoxLayout(contents);
@@ -189,7 +224,7 @@ Form::arrange()
 /*----------------------------------------------------------------------
  * Form fields
  *--------------------------------------------------------------------*/
-FormField::FormField(FieldDefinition field, MainWindow *main) : definition(field), main(main), active(false)
+FormField::FormField(FieldDefinition field, MainWindow *main, RideMetadata *meta) : definition(field), main(main), active(false), meta(meta)
 {
     QString units;
 
@@ -201,8 +236,11 @@ FormField::FormField(FieldDefinition field, MainWindow *main) : definition(field
         units = sp.rideMetric(field.name)->units(useMetricUnits);
         if (units != "") units = QString(" (%1)").arg(units);
     }
-
+#ifdef ENABLE_METRICS_TRANSLATION
+    label = new QLabel(QString("%1%2").arg(sp.displayName(field.name)).arg(units), this);
+#else
     label = new QLabel(QString("%1%2").arg(field.name).arg(units), this);
+#endif
 
     switch(field.type) {
 
@@ -344,6 +382,10 @@ FormField::editFinished()
         QDateTime update = QDateTime(date, current.time());
         main->rideItem()->setStartTime(update);
         main->notifyRideSelected();
+
+        // warn if the ride already exists with that date/time
+        meta->warnDateTime(update);
+
     } else if (definition.name == "Start Time") {
         QDateTime current = main->rideItem()->ride()->startTime();
         QTime time(/* hours*/ text.mid(0,2).toInt(),
@@ -353,6 +395,10 @@ FormField::editFinished()
         QDateTime update = QDateTime(current.date(), time);
         main->rideItem()->setStartTime(update);
         main->notifyRideSelected();
+
+        // warn if the ride already exists with that date/time
+        meta->warnDateTime(update);
+
     } else {
         if (sp.isMetric(definition.name) && enabled->isChecked()) {
 
@@ -546,6 +592,10 @@ RideMetadata::serialize(QString filename, QList<KeywordDefinition>keywordDefinit
     file.open(QFile::WriteOnly);
     file.resize(0);
     QTextStream out(&file);
+
+    // Character set encoding added to support international characters in names
+    out.setCodec("UTF-8");
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
 
     // begin document
     out << "<metadata>\n";

@@ -230,6 +230,7 @@ MainWindow::MainWindow(const QDir &home) :
 
     tabWidget = new QTabWidget;
     tabWidget->setUsesScrollButtons(true);
+    tabWidget->setElideMode(Qt::ElideNone);
 
     // setup trainWindow
     trainWindow = new TrainWindow(this, home);
@@ -430,7 +431,8 @@ MainWindow::MainWindow(const QDir &home) :
         i.toFront();
         while (i.hasNext()) {
             i.next();
-            QAction *action = new QAction(QString("%1...").arg(i.key()), this);
+            // Changed to show localized processor name in menu
+            QAction *action = new QAction(QString("%1...").arg(i.value()->name()), this);
             optionsMenu->addAction(action);
             connect(action, SIGNAL(triggered()), toolMapper, SLOT(map()));
             toolMapper->setMapping(action, i.key());
@@ -471,6 +473,8 @@ MainWindow::MainWindow(const QDir &home) :
             treeWidget->setCurrentItem(allRides->child(0));
         }
     }
+
+    treeWidget->setFocus(); // For MacOs QT (4.6.0-4.7.0 bug)
 
     setAttribute(Qt::WA_DeleteOnClose);
 }
@@ -1001,7 +1005,7 @@ MainWindow::showContextMenuPopup(const QPoint &pos)
         connect(actFrontInt, SIGNAL(triggered(void)), this, SLOT(frontInterval(void)));
         connect(actBackInt, SIGNAL(triggered(void)), this, SLOT(backInterval(void)));
 
-        if (tabWidget->currentWidget() == allPlotWindow)
+        if (tabWidget->currentWidget() == allPlotWindow || tabWidget->currentWidget() == aerolabWindow)
             menu.addAction(actZoomInt);
         menu.addAction(actRenameInt);
         menu.addAction(actDeleteInt);
@@ -1067,6 +1071,7 @@ void
 MainWindow::zoomInterval() {
     // zoom into this interval on allPlot
     allPlotWindow->zoomInterval(activeInterval);
+    aerolabWindow->zoomInterval(activeInterval);
 }
 
 void
@@ -1396,6 +1401,9 @@ void
 MainWindow::saveRide()
 {
     saveRideSingleDialog(ride); // will update Dirty flag if saved
+    ride->computeMetricsTime = QDateTime();
+    ride->computeMetrics();
+    rideSelected();
 }
 
 void

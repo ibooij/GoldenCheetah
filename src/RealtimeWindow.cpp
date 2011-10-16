@@ -22,8 +22,10 @@
 #include "RealtimePlot.h"
 #include "math.h" // for round()
 #include "Units.h" // for MILES_PER_KM
+#include <QDebug>
 
 // Three current realtime device types supported are:
+#include "RealtimeController.h"
 #include "ComputrainerController.h"
 #include "ANTplusController.h"
 #include "SimpleNetworkController.h"
@@ -47,8 +49,8 @@ RealtimeWindow::configUpdate()
 
     // set labels accordingly
     distanceLabel->setText(useMetricUnits ? tr("Distance (KM)") : tr("Distance (Miles)"));
-    speedLabel->setText(useMetricUnits ? tr("KPH") : tr("MPH"));
-    avgspeedLabel->setText(useMetricUnits ? tr("Avg KPH") : tr("Avg MPH"));
+    speedLabel->setText(useMetricUnits ? tr("km/h") : tr("MPH"));
+    avgspeedLabel->setText(useMetricUnits ? tr("Avg km/h") : tr("Avg MPH"));
 
     // get configured devices
     DeviceConfigurations all;
@@ -175,7 +177,7 @@ RealtimeWindow::RealtimeWindow(MainWindow *parent, TrainTool *trainTool, const Q
     powerLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
     heartrateLabel = new QLabel(tr("BPM"), this);
     heartrateLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
-    speedLabel = new QLabel(useMetricUnits ? tr("KPH") : tr("MPH"), this);
+    speedLabel = new QLabel(useMetricUnits ? tr("km/h") : tr("MPH"), this);
     speedLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
     cadenceLabel = new QLabel(tr("RPM"), this);
     cadenceLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
@@ -190,7 +192,7 @@ RealtimeWindow::RealtimeWindow(MainWindow *parent, TrainTool *trainTool, const Q
     avgpowerLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
     avgheartrateLabel = new QLabel(tr("Avg BPM"), this);
     avgheartrateLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
-    avgspeedLabel = new QLabel(useMetricUnits ? tr("Avg KPH") : tr("Avg MPH"), this);
+    avgspeedLabel = new QLabel(useMetricUnits ? tr("Avg km/h") : tr("Avg MPH"), this);
     avgspeedLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
     avgcadenceLabel = new QLabel(tr("Avg RPM"), this);
     avgcadenceLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
@@ -286,6 +288,11 @@ RealtimeWindow::RealtimeWindow(MainWindow *parent, TrainTool *trainTool, const Q
     stream_timer = new QTimer(this);
     load_timer = new QTimer(this);
 
+    session_time = QTime();
+    session_elapsed_msec = 0;
+    lap_time = QTime();
+    lap_elapsed_msec = 0;
+
     recordFile = NULL;
     status = 0;
     status |= RT_RECORDING;         // recording is on by default! - add others here
@@ -331,6 +338,7 @@ void RealtimeWindow::setDeviceController()
             deviceController = new SimpleNetworkController(this, &temp);
         }
     }
+
 }
 
 void RealtimeWindow::setStreamController()
@@ -368,28 +376,30 @@ void RealtimeWindow::Start()       // when start button is pressed
     } else {
         status |=RT_RUNNING;
         deviceController->start();          // start device
+        load_period.restart();
         startButton->setText(tr("Lap/Interval"));
         recordSelector->setEnabled(false);
         streamSelector->setEnabled(false);
         deviceSelector->setEnabled(false);
 
+        session_time.start();
+        session_elapsed_msec = 0;
+        lap_time.start();
+        lap_elapsed_msec = 0;
+
         if (status & RT_WORKOUT) {
             load_timer->start(LOADRATE);      // start recording
         }
+
+        if (recordSelector->isChecked()) {
+            status |= RT_RECORDING;
+        }
+
         if (status & RT_RECORDING) {
+            QDateTime now = QDateTime::currentDateTime();
 
             // setup file
-            QDate date = QDate().currentDate();
-            QTime time = QTime().currentTime();
-            QDateTime now(date, time);
-            QChar zero = QLatin1Char ( '0' );
-            QString filename = QString ( "%1_%2_%3_%4_%5_%6.csv" )
-                               .arg ( now.date().year(), 4, 10, zero )
-                               .arg ( now.date().month(), 2, 10, zero )
-                               .arg ( now.date().day(), 2, 10, zero )
-                               .arg ( now.time().hour(), 2, 10, zero )
-                               .arg ( now.time().minute(), 2, 10, zero )
-                               .arg ( now.time().second(), 2, 10, zero );
+            QString filename = now.toString(QString("yyyy_MM_dd_hh_mm_ss")) + QString(".csv");
 
             QString fulltarget = home.absolutePath() + "/" + filename;
             if (recordFile) delete recordFile;
@@ -423,14 +433,19 @@ void RealtimeWindow::Pause()        // pause capture to recalibrate
     if ((status&RT_RUNNING) == 0) return;
 
     if (status&RT_PAUSED) {
+        session_time.start();
+        lap_time.start();
         status &=~RT_PAUSED;
         deviceController->restart();
         pauseButton->setText(tr("Pause"));
         gui_timer->start(REFRESHRATE);
         if (status & RT_STREAMING) stream_timer->start(STREAMRATE);
         if (status & RT_RECORDING) disk_timer->start(SAMPLERATE);
+        load_period.restart();
         if (status & RT_WORKOUT) load_timer->start(LOADRATE);
     } else {
+        session_elapsed_msec += session_time.elapsed();
+        lap_elapsed_msec += lap_time.elapsed();
         deviceController->pause();
         pauseButton->setText(tr("Un-Pause"));
         status |=RT_PAUSED;
@@ -438,6 +453,7 @@ void RealtimeWindow::Pause()        // pause capture to recalibrate
         if (status & RT_STREAMING) stream_timer->stop();
         if (status & RT_RECORDING) disk_timer->stop();
         if (status & RT_WORKOUT) load_timer->stop();
+        load_msecs += load_period.restart();
     }
 }
 
@@ -449,6 +465,8 @@ void RealtimeWindow::Stop(int deviceStatus)        // when stop button is presse
     startButton->setText(tr("Start"));
     deviceController->stop();
     gui_timer->stop();
+
+    QDateTime now = QDateTime::currentDateTime();
 
     if (status & RT_RECORDING) {
         disk_timer->stop();
@@ -492,8 +510,10 @@ void RealtimeWindow::Stop(int deviceStatus)        // when stop button is presse
     spdcount = 0;
     lodcount = 0;
     displayWorkoutLap = displayLap =0;
-    lap_msecs = 0;
-    total_msecs = 0;
+    session_elapsed_msec = 0;
+    session_time.restart();
+    lap_elapsed_msec = 0;
+    lap_time.restart();
     avgPower= avgHeartRate= avgSpeed= avgCadence= avgLoad= 0;
     displayWorkoutDistance = displayDistance = 0;
     guiUpdate();
@@ -536,6 +556,9 @@ void RealtimeWindow::guiUpdate()           // refreshes the telemetry
     displayDistance += displaySpeed / (5 * 3600); // XXX assumes 200ms refreshrate
     displayWorkoutDistance += displaySpeed / (5 * 3600); // XXX assumes 200ms refreshrate
 
+    total_msecs = session_elapsed_msec + session_time.elapsed();
+    lap_msecs = lap_elapsed_msec + lap_time.elapsed();
+
     // update those LCDs!
     timeLCD->display(QString("%1:%2:%3.%4").arg(total_msecs/3600000)
                                            .arg((total_msecs%3600000)/60000,2,10,QLatin1Char('0'))
@@ -549,17 +572,24 @@ void RealtimeWindow::guiUpdate()           // refreshes the telemetry
 
     // Cadence, HR and Power needs to be rounded to 0 decimal places
     powerLCD->display(round(displayPower));
-    speedLCD->display(round(displaySpeed * (useMetricUnits ? 1.0 : MILES_PER_KM) * 10.00)/10.00);
+    double val = round(displaySpeed * (useMetricUnits ? 1.0 : MILES_PER_KM) * 10.00)/10.00;
+    speedLCD->display(QString::number(val, 'f', 1)); // always show 1 decimal point
     cadenceLCD->display(round(displayCadence));
     heartrateLCD->display(round(displayHeartRate));
     lapLCD->display(displayWorkoutLap+displayLap);
 
     // load or gradient depending on mode we are running
-    if (status&RT_MODE_ERGO) loadLCD->display(displayLoad);
-    else loadLCD->display(round(displayGradient*10)/10.00);
+    if (status&RT_MODE_ERGO)
+        loadLCD->display(displayLoad);
+    else
+    {
+        val = round(displayGradient*10)/10.00;
+        loadLCD->display(QString::number(val, 'f', 1)); // always show 1 decimal point
+    }
 
     // distance
-    distanceLCD->display(round(displayDistance*(useMetricUnits ? 1.0 : MILES_PER_KM) *10.00) /10.00);
+    val = round(displayDistance*(useMetricUnits ? 1.0 : MILES_PER_KM) *10.00) /10.00;
+    distanceLCD->display(QString::number(val, 'f', 1)); // always show 1 decimal point
 
     // NZ Averages.....
     if (displayPower) { //NZAP is bogus - make it configurable!!!
@@ -590,7 +620,8 @@ void RealtimeWindow::guiUpdate()           // refreshes the telemetry
     }
 
     avgpowerLCD->display((int)avgPower);
-    avgspeedLCD->display(round(avgSpeed * (useMetricUnits ? 1.0 : MILES_PER_KM) * 10.00)/10.00);
+    val = round(avgSpeed * (useMetricUnits ? 1.0 : MILES_PER_KM) * 10.00)/10.00;
+    avgspeedLCD->display(QString::number(val, 'f', 1)); // always show 1 decimal point
     avgcadenceLCD->display((int)avgCadence);
     avgheartrateLCD->display((int)avgHeartRate);
 
@@ -605,10 +636,6 @@ void RealtimeWindow::guiUpdate()           // refreshes the telemetry
 
     this->update();
 
-    // add time
-    total_msecs += REFRESHRATE;
-    lap_msecs += REFRESHRATE;
-
 }
 
 // can be called from the controller - when user presses "Lap" button
@@ -616,11 +643,13 @@ void RealtimeWindow::newLap()
 {
     displayLap++;
 
-    lap_msecs = 0;
     pwrcount  = 0;
     cadcount  = 0;
     hrcount   = 0;
     spdcount  = 0;
+
+    lap_time.restart();
+    lap_elapsed_msec = 0;
 
     // set avg to current values to ensure averages represent from now onwards
     // and not from beginning of workout
@@ -697,6 +726,7 @@ void RealtimeWindow::diskUpdate()
     QTextStream recordFileStream(recordFile);
 
     // convert from milliseconds to minutes
+    total_msecs = session_elapsed_msec + session_time.elapsed();
     Minutes = total_msecs;
     Minutes /= 1000.00;
     Minutes *= (1.0/60);
@@ -792,7 +822,9 @@ void RealtimeWindow::loadUpdate()
 {
     long load;
     double gradient;
-    load_msecs += LOADRATE;
+    // the period between loadUpdate calls is not constant, and not exactly LOADRATE,
+    // therefore, use a QTime timer to measure the load period
+    load_msecs += load_period.restart();
 
     if (status&RT_MODE_ERGO) {
         load = ergFile->wattsAt(load_msecs, displayWorkoutLap);

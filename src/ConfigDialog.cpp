@@ -153,6 +153,18 @@ void ConfigDialog::save_Clicked()
         settings->setValue(GC_LANG, "fr");
     else if (configPage->langCombo->currentIndex()==2)
         settings->setValue(GC_LANG, "ja");
+    else if (configPage->langCombo->currentIndex()==3)
+        settings->setValue(GC_LANG, "pt-br");
+    else if (configPage->langCombo->currentIndex()==4)
+        settings->setValue(GC_LANG, "it");
+    else if (configPage->langCombo->currentIndex()==5)
+        settings->setValue(GC_LANG, "de");
+    else if (configPage->langCombo->currentIndex()==6)
+        settings->setValue(GC_LANG, "ru");
+    else if (configPage->langCombo->currentIndex()==7)
+        settings->setValue(GC_LANG, "cs");
+    else if (configPage->langCombo->currentIndex()==8)
+        settings->setValue(GC_LANG, "es");
 
     if (configPage->unitCombo->currentIndex()==0)
         settings->setValue(GC_UNIT, "Metric");
@@ -162,6 +174,7 @@ void ConfigDialog::save_Clicked()
     settings->setValue(GC_ALLRIDES_ASCENDING, configPage->allRidesAscending->checkState());
     settings->setValue(GC_GARMIN_SMARTRECORD, configPage->garminSmartRecord->checkState());
     settings->setValue(GC_GARMIN_HWMARK, configPage->garminHWMarkedit->text());
+    settings->setValue(GC_MAP_INTERVAL, configPage->mapIntervaledit->text());
     settings->setValue(GC_CRANKLENGTH, configPage->crankLengthCombo->currentText());
     settings->setValue(GC_BIKESCOREDAYS, configPage->BSdaysEdit->text());
     settings->setValue(GC_BIKESCOREMODE, configPage->bsModeCombo->currentText());
@@ -171,6 +184,7 @@ void ConfigDialog::save_Clicked()
     settings->setValue(GC_STS_DAYS, cyclistPage->perfManSTSavg->text());
     settings->setValue(GC_LTS_DAYS, cyclistPage->perfManLTSavg->text());
     settings->setValue(GC_SB_TODAY, (int) cyclistPage->showSBToday->isChecked());
+    settings->setValue(GC_PM_DAYS, cyclistPage->perfManDays->text());
 
     // set default stress names if not set:
     settings->setValue(GC_STS_NAME, settings->value(GC_STS_NAME,tr("Short Term Stress")));
@@ -237,6 +251,7 @@ ConfigDialog::devaddClicked()
     add.type = devicePage->typeSelector->itemData(devicePage->typeSelector->currentIndex()).toInt();
     add.portSpec = devicePage->deviceSpecifier->displayText();
     add.deviceProfile = devicePage->deviceProfile->displayText();
+    add.postProcess = devicePage->virtualPower->currentIndex();
 
     // NOT IMPLEMENTED IN THIS RELEASE XXX
     //add.isDefaultDownload = devicePage->isDefaultDownload->isChecked() ? true : false;

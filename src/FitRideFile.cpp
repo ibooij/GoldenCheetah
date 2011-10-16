@@ -20,9 +20,11 @@
 #include <QSharedPointer>
 #include <QMap>
 #include <QSet>
-#include <assert.h>
+#include <QtEndian>
+#include <QDebug>
 #include <stdio.h>
 #include <stdint.h>
+#include <limits>
 
 #define RECORD_TYPE 20
 
@@ -30,106 +32,186 @@ static int fitFileReaderRegistered =
     RideFileFactory::instance().registerReader(
         "fit", "Garmin FIT", new FitFileReader());
 
-/*static const char *base_type_names[] = {
-    "enum",    // 0
-    "int8",    // 1
-    "uint8",   // 2
-    "int16",   // 3
-    "uint16",  // 4
-    "int32",   // 5
-    "uint32",  // 6
-    "string",  // 7
-    "float32", // 8
-    "float64", // 9
-    "uint8z",  // 10
-    "uint16z", // 11
-    "uint32z", // 12
-    "byte"     // 13
-}; */
-static const int base_type_names_size(14);
-
 static const QDateTime qbase_time(QDate(1989, 12, 31), QTime(0, 0, 0), Qt::UTC);
 
 struct FitField {
     int num;
-    int type;
+    int type; // FIT base_type
     int size; // in bytes
 };
 
 struct FitDefinition {
     int global_msg_num;
+    bool is_big_endian;
     std::vector<FitField> fields;
 };
 
+/* FIT has uint32 as largest integer type. So qint64 is large enough to
+ * store all integer types - no matter if they're signed or not */
+// XXX this needs to get changed to support non-integer values
+typedef qint64 fit_value_t;
+#define NA_VALUE std::numeric_limits<fit_value_t>::max()
+
+
 struct FitFileReaderState
 {
-    static QMap<int,QString> global_msg_names;
-
     QFile &file;
     QStringList &errors;
     RideFile *rideFile;
     time_t start_time;
     time_t last_time;
     QMap<int, FitDefinition> local_msg_types;
-    QSet<int> unknown_record_fields, unknown_global_msg_nums;
+    QSet<int> unknown_record_fields, unknown_global_msg_nums, unknown_base_type;
     int interval;
     int devices;
     bool stopped;
     int last_event_type;
+    int last_event;
     int last_msg_type;
 
     FitFileReaderState(QFile &file, QStringList &errors) :
         file(file), errors(errors), rideFile(NULL), start_time(0),
         last_time(0), interval(0), devices(0), stopped(true),
-        last_event_type(-1), last_msg_type(-1)
+        last_event_type(-1), last_event(-1), last_msg_type(-1)
     {
-        if (global_msg_names.isEmpty()) {
-            global_msg_names.insert(0,  "file_id");
-            global_msg_names.insert(18, "session");
-            global_msg_names.insert(19, "lap");
-            global_msg_names.insert(RECORD_TYPE, "record");
-            global_msg_names.insert(21, "event");
-            global_msg_names.insert(22, "undocumented");
-            global_msg_names.insert(23, "device_info");
-            global_msg_names.insert(34, "activity");
-            global_msg_names.insert(49, "file_creator");
-        }
     }
 
     struct TruncatedRead {};
+    struct BadDelta {};
 
-    int read_byte(int *count = NULL) {
-        char c;
-        if (file.read(&c, 1) != 1)
+    void read_unknown( int size, int *count = NULL ){
+        char c[size+1];
+
+        // XXX: just seek instead of read?
+        if (file.read(c, size ) != size)
+            throw TruncatedRead();
+        if (count)
+            (*count) += size;
+    }
+
+    fit_value_t read_int8(int *count = NULL) {
+        qint8 i;
+        if (file.read(reinterpret_cast<char*>( &i), 1) != 1)
             throw TruncatedRead();
         if (count)
             (*count) += 1;
-        return 0xff & c;
+
+        return i == 0x7f ? NA_VALUE : i;
     }
 
-    int read_short(int *count = NULL) {
-        uint16_t s;
-        if (file.read(reinterpret_cast<char*>(&s), 2) != 2)
+    fit_value_t read_uint8(int *count = NULL) {
+        quint8 i;
+        if (file.read(reinterpret_cast<char*>( &i), 1) != 1)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 1;
+
+        return i == 0xff ? NA_VALUE : i;
+    }
+
+    fit_value_t read_uint8z(int *count = NULL) {
+        quint8 i;
+        if (file.read(reinterpret_cast<char*>( &i), 1) != 1)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 1;
+
+        return i == 0x00 ? NA_VALUE : i;
+    }
+
+    fit_value_t read_int16(bool is_big_endian, int *count = NULL) {
+        qint16 i;
+        if (file.read(reinterpret_cast<char*>(&i), 2) != 2)
             throw TruncatedRead();
         if (count)
             (*count) += 2;
-        return 0xffff & s;
+
+        i = is_big_endian
+            ? qFromBigEndian<qint16>( i )
+            : qFromLittleEndian<qint16>( i );
+
+        return i == 0x7fff ? NA_VALUE : i;
     }
 
-    int read_long(int *count = NULL) {
-        uint32_t l;
-        if (file.read(reinterpret_cast<char*>(&l), 4) != 4)
+    fit_value_t read_uint16(bool is_big_endian, int *count = NULL) {
+        quint16 i;
+        if (file.read(reinterpret_cast<char*>(&i), 2) != 2)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 2;
+
+        i = is_big_endian
+            ? qFromBigEndian<quint16>( i )
+            : qFromLittleEndian<quint16>( i );
+
+        return i == 0xffff ? NA_VALUE : i;
+    }
+
+    fit_value_t read_uint16z(bool is_big_endian, int *count = NULL) {
+        quint16 i;
+        if (file.read(reinterpret_cast<char*>(&i), 2) != 2)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 2;
+
+        i = is_big_endian
+            ? qFromBigEndian<quint16>( i )
+            : qFromLittleEndian<quint16>( i );
+
+        return i == 0x0000 ? NA_VALUE : i;
+    }
+
+    fit_value_t read_int32(bool is_big_endian, int *count = NULL) {
+        qint32 i;
+        if (file.read(reinterpret_cast<char*>(&i), 4) != 4)
             throw TruncatedRead();
         if (count)
             (*count) += 4;
-        return l;
+
+        i = is_big_endian
+            ? qFromBigEndian<qint32>( i )
+            : qFromLittleEndian<qint32>( i );
+
+        return i == 0x7fffffff ? NA_VALUE : i;
     }
 
-    void decodeFileId(const FitDefinition &def, int, const std::vector<int> values) {
+    fit_value_t read_uint32(bool is_big_endian, int *count = NULL) {
+        quint32 i;
+        if (file.read(reinterpret_cast<char*>(&i), 4) != 4)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 4;
+
+        i = is_big_endian
+            ? qFromBigEndian<quint32>( i )
+            : qFromLittleEndian<quint32>( i );
+
+        return i == 0xffffffff ? NA_VALUE : i;
+    }
+
+    fit_value_t read_uint32z(bool is_big_endian, int *count = NULL) {
+        quint32 i;
+        if (file.read(reinterpret_cast<char*>(&i), 4) != 4)
+            throw TruncatedRead();
+        if (count)
+            (*count) += 4;
+
+        i = is_big_endian
+            ? qFromBigEndian<quint32>( i )
+            : qFromLittleEndian<quint32>( i );
+
+        return i == 0x00000000 ? NA_VALUE : i;
+    }
+
+    void decodeFileId(const FitDefinition &def, int, const std::vector<fit_value_t> values) {
         int i = 0;
         int manu = -1, prod = -1;
         foreach(const FitField &field, def.fields) {
-            int value = values[i++];
+            fit_value_t value = values[i++];
+
+            if( value == NA_VALUE )
+                continue;
+
             switch (field.num) {
                 case 1: manu = value; break;
                 case 2: prod = value; break;
@@ -143,6 +225,7 @@ struct FitFileReaderState
                 case 988: rideFile->setDeviceType("Garmin FR60"); break;
                 case 1018: rideFile->setDeviceType("Garmin FR310XT"); break;
                 case 1036: rideFile->setDeviceType("Garmin Edge 500"); break;
+                case 1169: rideFile->setDeviceType("Garmin Edge 800"); break;
                 default: rideFile->setDeviceType(QString("Unknown Garmin Device %1").arg(prod));
             }
         }
@@ -151,36 +234,57 @@ struct FitFileReaderState
         }
     }
 
-    void decodeEvent(const FitDefinition &def, int, const std::vector<int> values) {
+    void decodeEvent(const FitDefinition &def, int, const std::vector<fit_value_t> values) {
         time_t time = 0;
-        int type = -1;
+        int event = -1;
+        int event_type = -1;
         int i = 0;
         foreach(const FitField &field, def.fields) {
-            int value = values[i++];
+            fit_value_t value = values[i++];
+
+            if( value == NA_VALUE )
+                continue;
+
             switch (field.num) {
                 case 253: time = value + qbase_time.toTime_t(); break;
-                case 1: type = value; break;
+                case 0: event = value; break;
+                case 1: event_type = value; break;
                 default: ; // do nothing
             }
         }
-        switch (type) {
-            case 0: // start
-                stopped = false;
-                break;
-            case 3: // marker
-                break;
-            case 4: // stop all
-            case 9: // stop disable all
-                stopped = true;
-                break;
-            default:
-                errors << QString("unknown event type %1").arg(type);
+        if (event == 0) { // Timer event
+            switch (event_type) {
+                case 0: // start
+                    stopped = false;
+                    break;
+                case 1: // stop
+                    stopped = true;
+                    break;
+                case 2: // consecutive_depreciated
+                case 3: // marker
+                    break;
+                case 4: // stop all
+                    stopped = true;
+                    break;
+                case 5: // begin_depreciated
+                case 6: // end_depreciated
+                case 7: // end_all_depreciated
+                case 8: // stop_disable
+                    stopped = true;
+                    break;
+                case 9: // stop_disable_all
+                    stopped = true;
+                    break;
+                default:
+                    errors << QString("Unknown event type %1").arg(event_type);
+            }
         }
-        // printf("event type %d\n", type);
-        last_event_type = type;
+        // printf("event type %d\n", event_type);
+        last_event = event;
+        last_event_type = event_type;
     }
 
-    void decodeLap(const FitDefinition &def, int time_offset, const std::vector<int> values) {
+    void decodeLap(const FitDefinition &def, int time_offset, const std::vector<fit_value_t> values) {
         time_t time = 0;
         if (time_offset > 0)
             time = last_time + time_offset;
@@ -188,7 +292,11 @@ struct FitFileReaderState
         time_t this_start_time = 0;
         ++interval;
         foreach(const FitField &field, def.fields) {
-            int value = values[i++];
+            fit_value_t value = values[i++];
+
+            if( value == NA_VALUE )
+                continue;
+
             switch (field.num) {
                 case 253: time = value + qbase_time.toTime_t(); break;
                 case 2: this_start_time = value + qbase_time.toTime_t(); break;
@@ -203,30 +311,40 @@ struct FitFileReaderState
         }
     }
 
-    void decodeRecord(const FitDefinition &def, int time_offset, const std::vector<int> values) {
+    void decodeRecord(const FitDefinition &def, int time_offset, const std::vector<fit_value_t> values) {
         time_t time = 0;
         if (time_offset > 0)
             time = last_time + time_offset;
         double alt = 0, cad = 0, km = 0, grade = 0, hr = 0, lat = 0, lng = 0, badgps = 0;
         double resistance = 0, kph = 0, temperature = 0, time_from_course = 0, watts = 0;
-        int lati = 0x7fffffff, lngi = 0x7fffffff;
+        fit_value_t lati = NA_VALUE, lngi = NA_VALUE;
         int i = 0;
         foreach(const FitField &field, def.fields) {
-            int value = values[i++];
+            fit_value_t value = values[i++];
+
+            if( value == NA_VALUE )
+                continue;
+
             switch (field.num) {
-                case 253: time = value + qbase_time.toTime_t(); break;
+                case 253: time = value + qbase_time.toTime_t();
+                          // Time MUST NOT go backwards
+                          // You canny break the laws of physics, Jim
+                          if (time < last_time) time = last_time;
+                          break;
                 case 0: lati = value; break;
                 case 1: lngi = value; break;
-                case 2: alt = (value == 0xffff) ? 0 : (value / 5.0 - 500.0); break;
-                case 3: hr = (value == 0xff) ? 0 : value; break;
-                case 4: cad = (value == 0xff) ? 0 : value; break;
-                case 5: km = ((uint32_t) value == 0xffffffff) ? 0 : value / 100000.0; break;
-                case 6: kph = (value == 0xffff) ? 0 : value * 3.6 / 1000.0; break;
-                case 7: watts = (value == 0xffff) ? 0 : value; break;
-                case 9: grade = (value == 0x7fff) ? 0 : value / 100.0; break;
-                case 10: resistance = (value == 0xff) ? 0 : value; break;
-                case 11: time_from_course = (value == 0x7fffffff) ? 0 : value / 1000.0; break;
-                case 13: temperature = (value == 0x7f) ? 0 : value; break;
+                case 2: alt = value / 5.0 - 500.0; break;
+                case 3: hr = value; break;
+                case 4: cad = value; break;
+                case 5: km = value / 100000.0; break;
+                case 6: kph = value * 3.6 / 1000.0; break;
+                case 7: watts = value; break;
+                case 8: break; // XXX packed speed/dist
+                case 9: grade = value / 100.0; break;
+                case 10: resistance = value; break;
+                case 11: time_from_course = value / 1000.0; break;
+                case 12: break; // XXX "cycle_length"
+                case 13: temperature = value; break;
                 default: unknown_record_fields.insert(field.num);
             }
         }
@@ -238,11 +356,11 @@ struct FitFileReaderState
             /*
             errors << QString("At %1 seconds, time is stopped, but got record "
                               "anyway.  Ignoring it.  Last event type was "
-                              "%2.").arg(time-start_time).arg(last_event_type);
+                              "%2 for event %3.").arg(time-start_time).arg(last_event_type).arg(last_event);
             return;
             */
         }
-        if (lati != 0x7fffffff && lngi != 0x7fffffff) {
+        if (lati != NA_VALUE && lngi != NA_VALUE) {
             lat = lati * 180.0 / 0x7fffffff;
             lng = lngi * 180.0 / 0x7fffffff;
         } else
@@ -258,6 +376,14 @@ struct FitFileReaderState
             t.setTime_t(start_time);
             rideFile->setStartTime(t);
         }
+
+        //printf( "point time=%d lat=%.2lf lon=%.2lf alt=%.1lf hr=%.0lf "
+        //    "cad=%.0lf km=%.1lf kph=%.1lf watts=%.0lf grade=%.1lf "
+        //    "resist=%.1lf off=%.1lf temp=%.1lf\n",
+        //    time, lat, lng, alt, hr,
+        //    cad, km, kph, watts, grade,
+        //    resistance, time_from_course, temperature );
+
         double secs = time - start_time;
         double nm = 0;
         double headwind = 0.0;
@@ -266,9 +392,11 @@ struct FitFileReaderState
             // Evil smart recording.  Linearly interpolate missing points.
             RideFilePoint *prevPoint = rideFile->dataPoints().back();
             int deltaSecs = (int) (secs - prevPoint->secs);
-            assert(deltaSecs == secs - prevPoint->secs); // no fractional part
+            if(deltaSecs != secs - prevPoint->secs)
+                throw BadDelta(); // no fractional part
             // This is only true if the previous record was of type record:
-            assert(deltaSecs == time - last_time);
+            if(deltaSecs != time - last_time)
+                throw BadDelta();
             // If the last lat/lng was missing (0/0) then all points up to lat/lng are marked as 0/0.
             if (prevPoint->lat == 0 && prevPoint->lon == 0 ) {
                 badgps = 1;
@@ -308,52 +436,36 @@ struct FitFileReaderState
     int read_record(bool &stop, QStringList &errors) {
         stop = false;
         int count = 0;
-        int header_byte = read_byte(&count);
+        int header_byte = read_uint8(&count);
         if (!(header_byte & 0x80) && (header_byte & 0x40)) {
             // Definition record
             int local_msg_type = header_byte & 0xf;
-            int reserved = read_byte(&count); (void) reserved; // unused
-            int architecture = read_byte(&count);
-            int global_msg_num = read_short(&count);
-            if (!global_msg_names.contains(global_msg_num)) {
-                errors << QString("unknown global_msg_num %1").arg(global_msg_num);
-                stop = true;
-                return count;
-            }
-            /*printf("definition: local type %d is %s\n",
-                   local_msg_type,
-                   global_msg_names[global_msg_num].toAscii().constData());*/
-            if (architecture != 0) {
-                errors << QString("unsupported architecture %1").arg(architecture);
-                stop = true;
-                return count;
-            }
-            int num_fields = read_byte(&count);
-            // printf(", %d num_fields:\n", num_fields);
+
             local_msg_types.insert(local_msg_type, FitDefinition());
             FitDefinition &def = local_msg_types[local_msg_type];
-            def.global_msg_num = global_msg_num;
+
+            int reserved = read_uint8(&count); (void) reserved; // unused
+            def.is_big_endian = read_uint8(&count);
+            def.global_msg_num = read_uint16(def.is_big_endian, &count);
+            int num_fields = read_uint8(&count);
+            //printf("definition: local type=%d global=%d arch=%d fields=%d\n",
+            //       local_msg_type, def.global_msg_num, def.is_big_endian,
+            //       num_fields );
+
             for (int i = 0; i < num_fields; ++i) {
                 def.fields.push_back(FitField());
                 FitField &field = def.fields.back();
-                int field_def_num = read_byte(&count);
-                int field_size = read_byte(&count);
-                field.size = field_size;
-                int base_type = read_byte(&count);
-                int base_type_num = base_type & 0x1f;
-                if (base_type_num >= base_type_names_size) {
-                    errors << QString("unknown base type %1").arg(base_type_num);
-                    stop = true;
-                    return count;
-                }
-                field.type = base_type_num;
-                field.num = field_def_num;
-                /*printf("  field %d: %d bytes, num %d, type %s, %s endianness\n",
-                       i, field_size, field_def_num, base_type_names[base_type_num],
-                       (base_type & 0x80) ? "with" : "without");*/
+
+                field.num = read_uint8(&count);
+                field.size = read_uint8(&count);
+                int base_type = read_uint8(&count);
+                field.type = base_type & 0x1f;
+                //printf("  field %d: %d bytes, num %d, type %d\n",
+                //       i, field.size, field.num, field.type );
             }
         }
         else {
+            // Data record
             int local_msg_type = 0;
             int time_offset = 0;
             if (header_byte & 0x80) {
@@ -366,31 +478,43 @@ struct FitFileReaderState
             }
 
             if (!local_msg_types.contains(local_msg_type)) {
-                errors << QString("unrecognized local type %1").arg(local_msg_type);
+                errors << QString("local type %1 without previous definition").arg(local_msg_type);
                 stop = true;
                 return count;
             }
             const FitDefinition &def = local_msg_types[local_msg_type];
-            std::vector<int> values;
+            //printf( "message local=%d global=%d\n", local_msg_type,
+            //    def.global_msg_num );
+
+            std::vector<fit_value_t> values;
             foreach(const FitField &field, def.fields) {
-                int v;
-                switch (field.size) {
-                    case 1: v = read_byte(&count); break;
-                    case 2: v = read_short(&count); break;
-                    case 4: v = read_long(&count); break;
+                fit_value_t v;
+                switch (field.type) {
+                    case 0: v = read_uint8(&count); break;
+                    case 1: v = read_int8(&count); break;
+                    case 2: v = read_uint8(&count); break;
+                    case 3: v = read_int16(def.is_big_endian, &count); break;
+                    case 4: v = read_uint16(def.is_big_endian, &count); break;
+                    case 5: v = read_int32(def.is_big_endian, &count); break;
+                    case 6: v = read_uint32(def.is_big_endian, &count); break;
+                    case 10: v = read_uint8z(&count); break;
+                    case 11: v = read_uint16z(def.is_big_endian, &count); break;
+                    case 12: v = read_uint32z(def.is_big_endian, &count); break;
+                    //XXX: support float, string + byte base types
                     default:
-                        errors << QString("unsupported field size %1").arg(field.size);
-                        stop = true;
-                        return count;
+                        read_unknown( field.size, &count );
+                        v = NA_VALUE;
+                        unknown_base_type.insert(field.num);
                 }
                 values.push_back(v);
+                //printf( " field: type=%d num=%d value=%lld\n",
+                //    field.type, field.num, v );
             }
             // Most of the record types in the FIT format aren't actually all
             // that useful.  FileId, Lap, and Record clearly are.  The one
             // other one that might be useful is DeviceInfo, but it doesn't
             // seem to be filled in properly.  Sean's Cinqo, for example,
             // shows up as manufacturer #65535, even though it should be #7.
-            // printf("msg: %s\n", global_msg_names[def.global_msg_num].toAscii().constData());
             switch (def.global_msg_num) {
                 case 0:  decodeFileId(def, time_offset, values); break;
                 case 19: decodeLap(def, time_offset, values); break;
@@ -399,18 +523,12 @@ struct FitFileReaderState
                 case 23: /* device info */
                 case 18: /* session */
                 case 22: /* undocumented */
+                case 72: /* undocumented  - new for garmin 800*/
                 case 34: /* activity */
                 case 49: /* file creator */
+                case 79: /* unknown */
                     break;
                 default:
-                    /*
-                    int i = 0;
-                    printf("----------------\n");
-                    foreach(const FitField &field, def.fields) {
-                        int value = values[i++];
-                        printf("msg %d: field %d = %d\n", def.global_msg_num, field.num, value);
-                    }
-                    */
                     unknown_global_msg_nums.insert(def.global_msg_num);
             }
             last_msg_type = def.global_msg_num;
@@ -426,17 +544,21 @@ struct FitFileReaderState
             delete rideFile;
             return NULL;
         }
-        int header_size = read_byte();
-        if (header_size != 12) {
+        int header_size = read_uint8();
+        if (header_size != 12 && header_size != 14) {
             errors << QString("bad header size: %1").arg(header_size);
             delete rideFile;
             return NULL;
         }
-        int protocol_version = read_byte();
+        int protocol_version = read_uint8();
         (void) protocol_version;
-        int profile_version = read_short(); // not sure what to do with this
-        (void) profile_version;
-        int data_size = read_long(); // always little endian
+
+        // if the header size is 14 we have profile minor then profile major
+        // version. We still don't do anything with this information
+        int profile_version = read_uint16(false); // always littleEndian
+        (void) profile_version; // not sure what to do with this
+
+        int data_size = read_uint32(false); // always littleEndian
         char fit_str[5];
         if (file.read(fit_str, 4) != 4) {
             errors << "truncated header";
@@ -449,6 +571,10 @@ struct FitFileReaderState
             delete rideFile;
             return NULL;
         }
+
+        // read the rest of the header
+        if (header_size == 14) read_uint16(false);
+
         int bytes_read = 0;
         bool stop = false;
         try {
@@ -460,30 +586,29 @@ struct FitFileReaderState
             delete rideFile;
             return NULL;
         }
+        catch (BadDelta &e) {
+            errors << "Unsupported smart recording interval found";
+            delete rideFile;
+            return NULL;
+        }
         if (stop) {
             delete rideFile;
             return NULL;
         }
         else {
-            int crc = read_short();
+            int crc = read_uint16( false ); // always littleEndian
             (void) crc;
-            foreach(int num, unknown_global_msg_nums) {
-                if (global_msg_names.contains(num)) {
-                    errors << ("unsupported global message \"" + global_msg_names[num] +
-                               "\" (%1); ignoring it").arg(num);
-                }
-                else {
-                    errors << QString("unsupported global message number %1; ignoring it").arg(num);
-                }
-            }
+            foreach(int num, unknown_global_msg_nums)
+                qDebug() << QString("FitRideFile: unknown global message number %1; ignoring it").arg(num);
             foreach(int num, unknown_record_fields)
-                errors << QString("unknown record field %1; ignoring it").arg(num);
+                qDebug() << QString("FitRideFile: unknown record field %1; ignoring it").arg(num);
+            foreach(int num, unknown_base_type)
+                qDebug() << QString("FitRideFile: unknown base type %1; skipped").arg(num);
+
             return rideFile;
         }
     }
 };
-
-QMap<int,QString> FitFileReaderState::global_msg_names;
 
 RideFile *FitFileReader::openRideFile(QFile &file, QStringList &errors) const
 {
@@ -491,3 +616,4 @@ RideFile *FitFileReader::openRideFile(QFile &file, QStringList &errors) const
     return state->run();
 }
 
+// vi:expandtab tabstop=4 shiftwidth=4

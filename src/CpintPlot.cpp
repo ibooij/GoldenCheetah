@@ -134,6 +134,7 @@ update_cpi_file(const cpi_file_info *info, QProgressDialog *progress,
         if (secs > 0)
             data.points.append(cpint_point(secs, (int) round(p->watts)));
     }
+    if (!data.points.count()) return;
 
     FILE *out = fopen(info->outname.toAscii().constData(), "w");
     assert(out);
@@ -548,7 +549,7 @@ CpintPlot::plot_allCurve(CpintPlot *thisPlot,
                 allZoneLabels.append(label_mark);
             }
 
-            high = low - 1;
+            high = low;
             ++zone;
         }
     }

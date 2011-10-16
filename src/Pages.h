@@ -35,6 +35,7 @@ class QHBoxLayout;
 class QVBoxLayout;
 class ColorsPage;
 class IntervalMetricsPage;
+class SummaryMetricsPage;
 class MetadataPage;
 class KeywordsPage;
 class FieldsPage;
@@ -55,6 +56,7 @@ class ConfigurationPage : public QWidget
         QCheckBox *allRidesAscending;
         QCheckBox *garminSmartRecord;
         QLineEdit *garminHWMarkedit;
+        QLineEdit *mapIntervaledit;
         QLineEdit *BSdaysEdit;
         QComboBox *bsModeCombo;
         QLineEdit *workoutDirectory;
@@ -66,6 +68,7 @@ class ConfigurationPage : public QWidget
     private:
         MainWindow *main;
         ColorsPage *colorsPage;
+        SummaryMetricsPage *summaryMetrics;
         IntervalMetricsPage *intervalMetrics;
         MetadataPage *metadataPage;
 
@@ -83,6 +86,7 @@ class ConfigurationPage : public QWidget
         QGridLayout *bsDaysLayout;
         QHBoxLayout *bsModeLayout;
         QGridLayout *garminLayout;
+        QGridLayout *mapIntervalLayout;
 };
 
 class CyclistPage : public QWidget
@@ -96,9 +100,11 @@ class CyclistPage : public QWidget
         QLabel *perfManStartLabel;
         QLabel *perfManSTSLabel;
         QLabel *perfManLTSLabel;
+        QLabel *perfManDaysLabel;
         QLineEdit *perfManStart;
         QLineEdit *perfManSTSavg;
         QLineEdit *perfManLTSavg;
+        QLineEdit *perfManDays;
         QCheckBox *showSBToday;
 
     private:
@@ -112,11 +118,13 @@ class CyclistPage : public QWidget
         QHBoxLayout *perfManStartValLayout;
         QHBoxLayout *perfManSTSavgLayout;
         QHBoxLayout *perfManLTSavgLayout;
+        QHBoxLayout *perfManDaysLayout;
         QVBoxLayout *cyclistLayout;
         QVBoxLayout *mainLayout;
         QIntValidator *perfManStartValidator;
         QIntValidator *perfManSTSavgValidator;
         QIntValidator *perfManLTSavgValidator;
+        QIntValidator *perfManDaysValidator;
 };
 
 class deviceModel : public QAbstractTableModel
@@ -177,6 +185,9 @@ class DevicePage : public QWidget
         QCheckBox *isDefaultDownload;
         QCheckBox *isDefaultRealtime;
 
+        QLabel *virtualPowerLabel; // do we compute power using an algorithm?
+        QComboBox *virtualPower;
+
         QTableView *deviceList;
 
         QPushButton *addButton;
@@ -220,6 +231,36 @@ class IntervalMetricsPage : public QWidget
         QPushButton *leftButton;
         QPushButton *rightButton;
 };
+
+class SummaryMetricsPage : public QWidget
+{
+    Q_OBJECT
+
+    public:
+
+        SummaryMetricsPage(QWidget *parent = NULL);
+
+    public slots:
+
+        void upClicked();
+        void downClicked();
+        void leftClicked();
+        void rightClicked();
+        void availChanged();
+        void selectedChanged();
+        void saveClicked();
+
+    protected:
+
+        bool changed;
+        QListWidget *availList;
+        QListWidget *selectedList;
+        QPushButton *upButton;
+        QPushButton *downButton;
+        QPushButton *leftButton;
+        QPushButton *rightButton;
+};
+
 
 class KeywordsPage : public QWidget
 {
@@ -274,6 +315,7 @@ class FieldsPage : public QWidget
         void deleteClicked();
 
     private:
+        void addFieldTypes(QComboBox *p);
 
         QTreeWidget *fields;
 

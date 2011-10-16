@@ -46,6 +46,8 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
     */
     QRegExp ergomoCSV("(ZEIT|STRECKE)", Qt::CaseInsensitive);
     bool ergomo = false;
+
+    QChar ergomo_separator;
     int unitsHeader = 1;
     int total_pause = 0;
     int currentInterval = 0;
@@ -97,6 +99,14 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
                     ergomo = true;
                     rideFile->setDeviceType("Ergomo CSV");
                     unitsHeader = 2;
+
+                    QStringList headers = line.split(';');
+
+                    if (headers.size()>1)
+                        ergomo_separator = ';';
+                    else
+                        ergomo_separator = ',';
+
                     ++lineno;
                     continue;
                 }
@@ -201,20 +211,24 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
                 }
                 else {
                      // for ergomo formatted CSV files
-                     minutes     = line.section(',', 0, 0).toDouble() + total_pause;
-                     km = line.section(',', 1, 1).toDouble();
-                     watts = line.section(',', 2, 2).toDouble();
-                     cad = line.section(',', 3, 3).toDouble();
-                     kph = line.section(',', 4, 4).toDouble();
-                     hr = line.section(',', 5, 5).toDouble();
-                     alt = line.section(',', 6, 6).toDouble();
+                     minutes     = line.section(ergomo_separator, 0, 0).toDouble() + total_pause;
+                     QString km_string = line.section(ergomo_separator, 1, 1);
+                     km_string.replace(",",".");
+                     km = km_string.toDouble();
+                     watts = line.section(ergomo_separator, 2, 2).toDouble();
+                     cad = line.section(ergomo_separator, 3, 3).toDouble();
+                     QString kph_string = line.section(ergomo_separator, 4, 4);
+                     kph_string.replace(",",".");
+                     kph = kph_string.toDouble();
+                     hr = line.section(ergomo_separator, 5, 5).toDouble();
+                     alt = line.section(ergomo_separator, 6, 6).toDouble();
                      interval = line.section(',', 8, 8).toInt();
                      if (interval != prevInterval) {
                          prevInterval = interval;
                          if (interval != 0) currentInterval++;
                      }
                      if (interval != 0) interval = currentInterval;
-                     pause = line.section(',', 9, 9).toInt();
+                     pause = line.section(ergomo_separator, 9, 9).toInt();
                      total_pause += pause;
                      nm = NULL; // torque is not provided in the Ergomo file
 
@@ -270,10 +284,15 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
     QRegExp rideTime("^.*/(\\d\\d\\d\\d)_(\\d\\d)_(\\d\\d)_"
                      "(\\d\\d)_(\\d\\d)_(\\d\\d)\\.csv$");
     rideTime.setCaseSensitivity(Qt::CaseInsensitive);
+
     if (startTime != QDateTime()) {
+
+        // Start time was already set above?
         rideFile->setStartTime(startTime);
-    }
-    else if (rideTime.indexIn(file.fileName()) >= 0) {
+
+    } else if (rideTime.indexIn(file.fileName()) >= 0) {
+
+        // It matches the GC naming convention?
         QDateTime datetime(QDate(rideTime.cap(1).toInt(),
                                  rideTime.cap(2).toInt(),
                                  rideTime.cap(3).toInt()),
@@ -281,7 +300,9 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
                                  rideTime.cap(5).toInt(),
                                  rideTime.cap(6).toInt()));
         rideFile->setStartTime(datetime);
+
     } else {
+
         // Could be yyyyddmm_hhmmss_NAME.csv (case insensitive)
         rideTime.setPattern("(\\d\\d\\d\\d)(\\d\\d)(\\d\\d)_(\\d\\d)(\\d\\d)(\\d\\d)[^\\.]*\\.csv$");
         if (rideTime.indexIn(file.fileName()) >= 0) {
@@ -293,7 +314,30 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors) const
                                      rideTime.cap(6).toInt()));
             rideFile->setStartTime(datetime);
         } else {
-            qWarning("Failed to set start time");
+
+            // is it in poweragent format "name yyyy-mm-dd hh-mm-ss.csv"
+            rideTime.setPattern("(\\d\\d\\d\\d)-(\\d\\d)-(\\d\\d) (\\d\\d)-(\\d\\d)-(\\d\\d)\\.csv$");
+            if (rideTime.indexIn(file.fileName()) >=0) {
+
+                QDateTime datetime(QDate(rideTime.cap(1).toInt(),
+                                        rideTime.cap(2).toInt(),
+                                        rideTime.cap(3).toInt()),
+                                QTime(rideTime.cap(4).toInt(),
+                                        rideTime.cap(5).toInt(),
+                                        rideTime.cap(6).toInt()));
+                rideFile->setStartTime(datetime);
+
+            } else {
+
+                // NO DICE
+
+                // XXX Note: qWarning("Failed to set start time");
+                // console messages are no use, so commented out
+                // this problem will ONLY occur during the import
+                // process which traps these and corrects them
+                // so no need to do anything here
+
+            }
         }
     }
 

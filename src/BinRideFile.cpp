@@ -175,12 +175,10 @@ struct BinFileReaderState
         }
     }
 
-    struct TruncatedRead {};
-
     int read_byte(int *count = NULL, int *sum = NULL) {
         char c;
         if (file.read(&c, 1) != 1)
-            throw TruncatedRead();
+            return -1;
         if (sum)
             *sum += (0xff & c);
         if (count)
@@ -191,14 +189,17 @@ struct BinFileReaderState
     int read_double_byte(int *count = NULL, int *sum = NULL) {
         char c1,c2;
         if (file.read(&c1, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c2, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
 
         if (sum)
             *sum += (0xff & c1) + (0xff & c2);
-        if (count)
-            *count += 2;
+
         
         return  256*(0xff & c1) + (0xff & c2);
     }
@@ -206,17 +207,25 @@ struct BinFileReaderState
     int read_four_byte(int *count = NULL, int *sum = NULL) {
         char c1,c2,c3,c4;
         if (file.read(&c1, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c2, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c3, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c4, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
+
         if (sum)
             *sum += (0xff & c1) + (0xff & c2) + (0xff & c3) + (0xff & c4);
-        if (count)
-            *count += 4;
+
 
         return 256*256*256*(0xff & c1) + 256*256*(0xff & c2) + 256*(0xff & c3) + (0xff & c4);
     }
@@ -224,27 +233,38 @@ struct BinFileReaderState
     int read_date(int *count = NULL, int *sum = NULL) {
         char c1,c2,c3,c4,c5,c6,c7;
         if (file.read(&c1, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c2, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c3, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c4, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c5, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c6, 1) != 1)
-            throw TruncatedRead();
+           return -1;
+        if (count)
+            *count += 1;
         if (file.read(&c7, 1) != 1)
-            throw TruncatedRead();
+            return -1;
+        if (count)
+            *count += 1;
 
         if (sum)
             *sum += (0xff & c1) + (0xff & c2) + (0xff & c3) + (0xff & c4) + (0xff & c5) + (0xff & c6) + (0xff & c7);
 
-        if (count)
-            *count += 7;
-
-        QDateTime dateTime(QDate((0xff & c1)*256+(0xff & c2), (0xff & c3), (0xff & c4)), QTime((0xff & c5), (0xff & c6), (0xff & c7)), Qt::UTC);
+        QDateTime dateTime(QDate((0xff & c1)*256+(0xff & c2), (0xff & c3), (0xff & c4)), QTime((0xff & c5), (0xff & c6), (0xff & c7)), Qt::LocalTime);
 
         return dateTime.toTime_t();
     }
@@ -538,9 +558,18 @@ struct BinFileReaderState
 
         int record_type = read_byte(&bytes_read, &sum); // Always 0xFF
 
-        if (record_type == 255) {
+        if (record_type == -1) {
+           errors << QString("Truncated file");
+           //bytes_read++;
+           return bytes_read;
+        } else if (record_type == 255) {
             int format_identifier = read_byte(&bytes_read, &sum);
-            if (!global_record_types.contains(format_identifier)) {
+
+            if (format_identifier == -1) {
+               errors << QString("Truncated file");
+               //bytes_read++;
+               return bytes_read;
+            } else if (!global_record_types.contains(format_identifier)) {
                 errors << QString("unknown format_identifier %1").arg(format_identifier);
                 stop = true;
                 return bytes_read;
@@ -565,7 +594,10 @@ struct BinFileReaderState
             int checksum = read_double_byte(&bytes_read);
             //printf("- checksum %d : %d\n", checksum, sum);
 
-            if (checksum != sum) {
+            if (checksum == -1) {
+               errors << QString("Truncated file");
+               return bytes_read;
+            } else if (checksum != sum) {
                 errors << QString("bad checksum: %1").arg(sum);
                 stop = true;
                 return bytes_read;
@@ -602,7 +634,10 @@ struct BinFileReaderState
                  int checksum = read_double_byte(&bytes_read);
                  //printf("- checksum %d : %d\n", checksum, sum);
 
-                if (checksum != sum) {
+                 if (checksum == -1) {
+                    errors << QString("Truncated file");
+                    return bytes_read;
+                 } else if (checksum != sum) {
                    errors << QString("bad checksum: %1").arg(sum);
                    stop = true;
                    return bytes_read;
@@ -661,7 +696,7 @@ struct BinFileReaderState
             foreach(int num, unknown_format_identifiers) {
                 errors << QString("unknow format identifier %1; ignoring it").arg(num);
             }
-            foreach(int num, unused_record_types) {
+            /*foreach(int num, unused_record_types) {
                 errors << QString("unused record type \"%1\" (%2)\n").arg(global_record_types[num].toAscii().constData())
                                                                      .arg(num);
             }
@@ -674,7 +709,7 @@ struct BinFileReaderState
                            .arg(global_record_types[record_type].toAscii().constData())
                            .arg(record_type);
                 }
-            }
+            }*/
             foreach(int num, unexpected_record_types) {
                 errors << QString("unexpected record type %1 (%2)\n").arg(global_record_types[num]).arg(num);
             }

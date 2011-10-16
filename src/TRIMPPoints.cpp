@@ -22,8 +22,7 @@
 #include "HrZones.h"
 #include <QObject>
 #include <math.h>
-
-#define tr(s) QObject::tr(s)
+#include <QApplication>
 
 // This is Morton/Banister with Green et al coefficient.
 //
@@ -33,6 +32,7 @@
 // RHR = resting heart rate
 //
 class TRIMPPoints : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(TRIMPPoints)
 
     double score;
 
@@ -43,12 +43,16 @@ class TRIMPPoints : public RideMetric {
     TRIMPPoints() : score(0.0)
     {
         setSymbol("trimp_points");
+#ifdef ENABLE_METRICS_TRANSLATION
+        setInternalName("TRIMP Points");
+    }
+    void initialize() {
+#endif
         setName(tr("TRIMP Points"));
         setMetricUnits("");
         setImperialUnits("");
         setType(RideMetric::Total);
     }
-
     void compute(const RideFile *rideFile,
                  const Zones *, int ,
                  const HrZones *hrZones, int hrZoneRange,
@@ -65,14 +69,15 @@ class TRIMPPoints : public RideMetric {
         double restHr = hrZones->getRestHr(hrZoneRange);
         restHr = rideFile->getTag("Rest HR", QString("%1").arg(restHr)).toDouble();
 
-        assert(deps.contains("workout_time"));
+        assert(deps.contains("time_riding"));
         assert(deps.contains("average_hr"));
-        const RideMetric *workoutTimeMetric = deps.value("workout_time");
+        //const RideMetric *workoutTimeMetric = deps.value("workout_time");
+        const RideMetric *timeRidingMetric = deps.value("time_riding");
         const RideMetric *averageHrMetric = deps.value("average_hr");
-        assert(workoutTimeMetric);
+        assert(timeRidingMetric);
         assert(averageHrMetric);
 
-        double secs = workoutTimeMetric->value(true);
+        double secs = timeRidingMetric->value(true);
         double hr = averageHrMetric->value(true);
 
         //TRIMP: = t x %HRR x 0.64e1,92(%HRR)
@@ -100,6 +105,7 @@ class TRIMPPoints : public RideMetric {
 
 
 class TRIMP100Points : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(TRIMP100Points)
 
     double score;
 
@@ -110,12 +116,16 @@ public:
     TRIMP100Points() : score(0.0)
     {
         setSymbol("trimp_100_points");
+#ifdef ENABLE_METRICS_TRANSLATION
+        setInternalName("TRIMP(100) Points");
+    }
+    void initialize() {
+#endif
         setName(tr("TRIMP(100) Points"));
         setMetricUnits("");
         setImperialUnits("");
         setType(RideMetric::Total);
     }
-
     void compute(const RideFile *rideFile,
                  const Zones *, int,
                  const HrZones *hrZones, int hrZoneRange,
@@ -167,6 +177,7 @@ public:
 // 0.9 (zone 1 0-55%), 1.1 (zone 2 55-66%), 1.2 (zone 3 66-75%), 2 (zone 4 75-84%), and 5 (zone 5 84-100%)
 
 class TRIMPZonalPoints : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(TRIMPZonalPoints)
 
     double score;
 
@@ -177,12 +188,16 @@ public:
     TRIMPZonalPoints() : score(0.0)
     {
         setSymbol("trimp_zonal_points");
+#ifdef ENABLE_METRICS_TRANSLATION
+        setInternalName("TRIMP Zonal Points");
+    }
+    void initialize() {
+#endif
         setName(tr("TRIMP Zonal Points"));
         setMetricUnits("");
         setImperialUnits("");
         setType(RideMetric::Total);
     }
-
     void compute(const RideFile *,
                  const Zones *, int,
                  const HrZones *hrZones, int hrZoneRange,
@@ -279,14 +294,65 @@ public:
     RideMetric *clone() const { return new TRIMPZonalPoints(*this); }
 };
 
+
+// RPE is the rate of percieved exercion (borg scale).
+// Is a numerical value the riders give in "average" fatigue of the training session he percieved.
+//
+// Calculate the session RPE that is the product of RPE * time (minutes) of training/race ride. I
+// We have 3 different "training load" parameters:
+//    - internal load (TRIMPS)
+//    - external load (bikescore/TSS)
+//    - perceived load (session RPE)
+//
+class SessionRPE : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(TRIMPPoints)
+
+    double score;
+
+    public:
+
+    SessionRPE() : score(0.0)
+    {
+        setSymbol("session_rpe");
+#ifdef ENABLE_METRICS_TRANSLATION
+        setInternalName("Session RPE");
+    }
+    void initialize() {
+#endif
+        setName(tr("Session RPE"));
+        setMetricUnits("");
+        setImperialUnits("");
+        setType(RideMetric::Total);
+    }
+    void compute(const RideFile *rideFile,
+                 const Zones *, int ,
+                 const HrZones *hrZones, int hrZoneRange,
+                 const QHash<QString,RideMetric*> &deps)
+    {
+        // use RPE value in ride metadata
+        double rpe = rideFile->getTag("RPE", "0.0").toDouble();
+
+        assert(deps.contains("time_riding"));
+        const RideMetric *timeRidingMetric = deps.value("time_riding");
+        assert(timeRidingMetric);
+
+        double secs = timeRidingMetric->value(true);
+
+        // ok lets work the score out
+        score = ((secs == 0.0 || rpe == 0) ? 0.0 :  secs/60 *rpe);
+        setValue(score);
+    }
+
+    RideMetric *clone() const { return new SessionRPE(*this); }
+};
+
 static bool added() {
     QVector<QString> deps;
-    deps.append("workout_time");
+    deps.append("time_riding");
     deps.append("average_hr");
     RideMetricFactory::instance().addMetric(TRIMPPoints(), &deps);
 
     deps.clear();
-    deps.append("workout_time");
     deps.append("trimp_points");
     RideMetricFactory::instance().addMetric(TRIMP100Points(), &deps);
 
@@ -298,6 +364,10 @@ static bool added() {
     deps.append("time_in_zone_H4");
     deps.append("time_in_zone_H5");
     RideMetricFactory::instance().addMetric(TRIMPZonalPoints(), &deps);
+
+    deps.clear();
+    deps.append("time_riding");
+    RideMetricFactory::instance().addMetric(SessionRPE(), &deps);
     return true;
 }
 

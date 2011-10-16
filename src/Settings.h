@@ -31,11 +31,13 @@
 #define GC_SETTINGS_SUMMARYSPLITTER_SIZES "mainwindow/summarysplittersizes"
 #define GC_SETTINGS_CALENDAR_SIZES  "mainwindow/calendarSizes"
 #define GC_TABS_TO_HIDE             "mainwindow/tabsToHide"
+#define GC_SETTINGS_SUMMARY_METRICS "rideSummaryWindow/summaryMetrics"
 #define GC_SETTINGS_INTERVAL_METRICS "rideSummaryWindow/intervalMetrics"
 #define GC_RIDE_PLOT_SMOOTHING       "ridePlot/Smoothing"
 #define GC_RIDE_PLOT_STACK           "ridePlot/Stack"
 #define GC_PERF_MAN_METRIC           "performanceManager/metric"
 #define GC_HIST_BIN_WIDTH            "histogamWindow/binWidth"
+#define GC_SETTINGS_SUMMARY_METRICS_DEFAULT "skiba_xpower,skiba_relative_intensity,skiba_bike_score,daniels_points,daniels_equivalent_power,trimp_points,aerobic_decoupling"
 #define GC_SETTINGS_INTERVAL_METRICS_DEFAULT "workout_time,total_distance,total_work,average_power,skiba_xpower,max_power,average_hr,ninety_five_percent_hr,average_cad,average_speed"
 #define GC_DATETIME_FORMAT          "ddd MMM dd, yyyy, hh:mm AP"
 #define GC_UNIT                     "unit"
@@ -52,6 +54,7 @@
 #define GC_BIKESCOREDAYS	    "bikeScoreDays"
 #define GC_BIKESCOREMODE	    "bikeScoreMode"
 #define GC_SB_TODAY             "PMshowSBtoday"
+#define GC_PM_DAYS              "pmDays"
 #define GC_INITIAL_LTS		    "initialLTS"
 #define GC_INITIAL_STS		    "initialSTS"
 #define GC_LTS_DAYS		    "LTSdays"
@@ -79,6 +82,7 @@
 #define GC_DEV_TYPE  "devicetype"
 #define GC_DEV_DEFI  "devicedefi"
 #define GC_DEV_DEFR  "devicedefr"
+#define GC_DEV_VIRTUAL  "devicepostProcess"
 
 // data processor config
 #define GC_DPFG_TOLERANCE "dataprocess/fixgaps/tolerance"
@@ -96,6 +100,9 @@
 // Tcx Smart recording
 #define GC_GARMIN_SMARTRECORD "garminSmartRecord"
 #define GC_GARMIN_HWMARK "garminHWMark"
+
+// Map Interval period
+#define GC_MAP_INTERVAL "mapInterval"
 
 #include <QSettings>
 #include <boost/shared_ptr.hpp>

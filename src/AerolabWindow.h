@@ -38,18 +38,32 @@ class AerolabWindow : public QWidget {
   AerolabWindow(MainWindow *mainWindow);
   void setData(RideItem *ride);
   void zoomInterval(IntervalItem *); // zoom into a specified interval
+  double getCanvasTop() const;
+  double getCanvasBottom() const;
 
+  QSlider *eoffsetSlider;
 
   public slots:
-  void setCrrFromSlider();
-  void setCdaFromSlider();
-  void setTotalMassFromSlider();
-  void setRhoFromSlider();
-  void setEtaFromSlider();
-  void setEoffsetFromSlider();
-  void rideSelected();
-  void configChanged();
 
+  void setCrrFromSlider();
+  void setCrrFromText(const QString text);
+  void setCdaFromSlider();
+  void setCdaFromText(const QString text);
+  void setTotalMassFromSlider();
+  void setTotalMassFromText(const QString text);
+  void setRhoFromSlider();
+  void setRhoFromText(const QString text);
+  void setEtaFromSlider();
+  void setEtaFromText(const QString text);
+  void setEoffsetFromSlider();
+  void setEoffsetFromText(const QString text);
+
+  void setAutoEoffset(int value);
+  void setByDistance(int value);
+  void rideSelected();
+  void zoomChanged();
+  void configChanged();
+  void intervalSelected();
 
   protected slots:
 
@@ -61,22 +75,22 @@ class AerolabWindow : public QWidget {
   // Bike parameter controls:
   QSlider *crrSlider;
   QLineEdit *crrLineEdit;
-  QLCDNumber *crrQLCDNumber;
+  //QLCDNumber *crrQLCDNumber;
   QSlider *cdaSlider;
   QLineEdit *cdaLineEdit;
-  QLCDNumber *cdaQLCDNumber;
+  //QLCDNumber *cdaQLCDNumber;
   QSlider *mSlider;
   QLineEdit *mLineEdit;
-  QLCDNumber *mQLCDNumber;
+  //QLCDNumber *mQLCDNumber;
   QSlider *rhoSlider;
   QLineEdit *rhoLineEdit;
-  QLCDNumber *rhoQLCDNumber;
+  //QLCDNumber *rhoQLCDNumber;
   QSlider *etaSlider;
   QLineEdit *etaLineEdit;
-  QLCDNumber *etaQLCDNumber;
-  QSlider *eoffsetSlider;
+  //QLCDNumber *etaQLCDNumber;
+
   QLineEdit *eoffsetLineEdit;
-  QLCDNumber *eoffsetQLCDNumber;
+  //QLCDNumber *eoffsetQLCDNumber;
 
 };
 
